@@ -1,0 +1,689 @@
+---
+title: "CellHet Package Examples"
+author: "CellHet Team"
+date: "April 2025"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 7
+)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+```
+
+# Introduction to CellHet
+
+CellHet is a comprehensive R package for analyzing cellular heterogeneity in single-cell RNA-seq data across multiple conditions, cell types, and data modalities. This document provides practical examples of how to use CellHet's core functionality.
+
+## Installation
+
+```{r installation, eval=FALSE}
+# Install CellHet from CRAN
+install.packages("CellHet")
+
+# Or install the development version from GitHub
+# install.packages("devtools")
+# devtools::install_github("guokai8/CellHet")
+```
+
+```{r load-library}
+library(CellHet)
+```
+
+# Basic Example: DEG Analysis
+
+First, let's demonstrate how to perform differential expression analysis across cell types and conditions.
+
+## Load and preprocess data
+
+For this example, we'll use a PBMC dataset from Seurat.
+
+```{r load-data}
+# Load example dataset
+data("pbmc_small")
+
+# Add a simulated condition variable for demonstration
+set.seed(42)
+pbmc_small$condition <- sample(c("Control", "Treatment"), ncol(pbmc_small), replace = TRUE)
+
+# Process the data
+pbmc_small <- NormalizeData(pbmc_small)
+pbmc_small <- FindVariableFeatures(pbmc_small)
+pbmc_small <- ScaleData(pbmc_small)
+pbmc_small <- RunPCA(pbmc_small)
+pbmc_small <- FindNeighbors(pbmc_small)
+pbmc_small <- FindClusters(pbmc_small, resolution = 0.5)
+pbmc_small <- RunUMAP(pbmc_small, dims = 1:10)
+
+# Visualize UMAP with clusters
+DimPlot(pbmc_small, group.by = "seurat_clusters", label = TRUE) + 
+  ggtitle("PBMC Clusters")
+```
+
+## Run Differential Expression Analysis
+
+Now, let's use CellHet to find differentially expressed genes between conditions across all cell types:
+
+```{r run-deg-analysis}
+# Identify differentially expressed genes
+deg_results <- findDifferentialGenes(
+  object = pbmc_small,
+  group_var = "condition",
+  cell_type_var = "seurat_clusters",
+  min_cells = 3,
+  logfc.threshold = 0.25,
+  p_val_adj_threshold = 0.05,
+  test.use = "wilcox",
+  return_summary = TRUE
+)
+
+# View summary results
+head(deg_results$summary)
+```
+
+## Visualize DEG Results
+
+CellHet provides several functions for visualizing DEG results:
+
+```{r visualize-degs}
+# Create a heatmap of DEGs across cell types
+heatmap_plot <- visualizeDEGHeatmap(
+  deg_results = deg_results,
+  show_reg_indicators = TRUE,
+  top_labels = TRUE,
+  cluster_rows = TRUE
+)
+print(heatmap_plot)
+
+# Create a barplot of DEGs
+barplot <- visualizeDEGBarplot(
+  deg_results = deg_results,
+  up_color = "red",
+  down_color = "blue",
+  facet_by = "comparison"
+)
+print(barplot)
+
+# Create a dotplot of DEGs
+dotplot <- visualizeDEGDotplot(
+  deg_results = deg_results,
+  count_display = "inside",
+  point_size_range = c(1, 10)
+)
+print(dotplot)
+```
+
+## Find Shared DEGs Across Cell Types
+
+You can identify DEGs that are shared across multiple cell types:
+
+```{r shared-degs}
+# Find shared DEGs
+shared_degs <- findSharedDEGs(
+  deg_results = deg_results,
+  min_deg_count = 1,
+  plot_type = "upset",
+  direction = "both"
+)
+
+# Visualize shared DEGs
+print(shared_degs$plot)
+```
+
+## Compare Cell Type Responses
+
+You can also compare how different cell types respond to treatment:
+
+```{r compare-responses}
+# Compare responses across cell types
+response_comparison <- compareResponses(
+  deg_results = deg_results,
+  reference_cell_type = "0",
+  plot_type = "heatmap",
+  similarity_metric = "jaccard"
+)
+
+# Visualize response comparison
+print(response_comparison$plot)
+```
+
+# Advanced Example: Trajectory Analysis
+
+CellHet includes functions for analyzing gene expression changes along a trajectory.
+
+```{r trajectory-setup, eval=FALSE}
+# For this example, we assume a pseudotime has been calculated
+# In practice, you would use tools like Monocle3, Slingshot, or Velocyto
+# This is just a simulated pseudotime for demonstration
+
+# Add a simulated pseudotime variable
+set.seed(42)
+pbmc_small$pseudotime <- runif(ncol(pbmc_small))
+
+# Run trajectory analysis
+trajectory_results <- analyzeDEGTrajectory(
+  sce = pbmc_small,
+  trajectory_var = "pseudotime",
+  cell_type_var = "seurat_clusters",
+  n_bins = 10,
+  smooth_method = "loess",
+  n_top_genes = 30,
+  cluster_genes = TRUE,
+  n_clusters = 3,
+  plot_type = "both"
+)
+
+# Visualize gene expression along the trajectory
+trajectory_plot <- plotGeneTrajectory(
+  trajectory_results = trajectory_results,
+  genes = c("MS4A1", "CD79A", "LYZ"),
+  plot_type = "line",
+  add_loess_fit = TRUE
+)
+
+print(trajectory_plot)
+
+# Compare trajectories between conditions
+diff_trajectory <- diffTrajectoryAnalysis(
+  sce = pbmc_small,
+  trajectory_var = "pseudotime",
+  group_var = "condition",
+  cell_type_var = "seurat_clusters",
+  n_bins = 10,
+  test_method = "anova",
+  p_val_threshold = 0.05
+)
+
+# View top differentially expressed genes along trajectory
+head(diff_trajectory$test_results)
+```
+
+# Advanced Example: Spatial Analysis
+
+CellHet provides tools for analyzing spatial heterogeneity in spatial transcriptomics data.
+
+```{r spatial-analysis, eval=FALSE}
+# For this example, we would use a Seurat object with spatial data
+# or a SpatialExperiment object
+# This is just pseudo-code for demonstration
+
+# Analyze spatial heterogeneity
+spatial_results <- analyzeSpatialHeterogeneity(
+  spatial_object = spatial_object,
+  cell_type_col = "cell_type",
+  spatial_coords = c("x", "y"),
+  method = "morans_i",
+  cluster_method = "dbscan",
+  n_clusters = 5
+)
+
+# Create a spatial heterogeneity map
+heterogeneity_map <- plotSpatialHeterogeneity(
+  spatial_results = spatial_results,
+  plot_type = "all",
+  top_n = 5,
+  color_palette = "viridis",
+  add_convex_hull = TRUE
+)
+
+print(heterogeneity_map)
+
+# Analyze spatial co-occurrence of cell types
+cooccurrence_results <- analyzeSpatialCoOccurrence(
+  spatial_object = spatial_object,
+  cell_type_col = "cell_type",
+  spatial_coords = c("x", "y"),
+  radius = 50,
+  method = "correlation",
+  plot_type = "both"
+)
+
+print(cooccurrence_results$plots$heatmap)
+print(cooccurrence_results$plots$network)
+```
+
+# Advanced Example: Multi-Modal Integration
+
+CellHet can integrate and analyze multiple data modalities such as scRNA-seq, scATAC-seq, and spatial transcriptomics.
+
+```{r multi-modal, eval=FALSE}
+# For this example, we would use multiple Seurat or SingleCellExperiment objects
+# This is just pseudo-code for demonstration
+
+# Integrate multiple modalities
+integration_results <- integrateMultiModalData(
+  data_list = list(rna_data, atac_data),
+  modality_names = c("RNA", "ATAC"),
+  cell_type_var = "cell_type",
+  integration_method = "harmony",
+  dim_reduction = "umap"
+)
+
+# Visualize integrated data
+print(integration_results$plots$modality_plot)
+print(integration_results$plots$celltype_plot)
+
+# Analyze heterogeneity across modalities
+heterogeneity_results <- analyzeMultiModalHeterogeneity(
+  integration_results = integration_results,
+  n_markers = 20,
+  test_method = "wilcox",
+  plot_heatmap = TRUE
+)
+
+# Compare responses across modalities
+response_comparison <- compareMultiModalResponses(
+  data_list = list(rna_data, atac_data),
+  modality_names = c("RNA", "ATAC"),
+  cell_type_var = "cell_type",
+  condition_var = "condition",
+  reference_condition = "Control",
+  plot_type = "both"
+)
+
+# View shared differential features across modalities
+print(response_comparison$plots$summary_barplot)
+```
+
+# Advanced Use Case: Single-cell Multi-omic Analysis
+
+```{r multi-omic-example, eval=FALSE}
+# Example of integrating RNA-seq and ATAC-seq data from the same cells
+# This would use real multi-omic data in practice
+
+# Create a custom visualized workflow
+multiOmicWorkflow <- function(rna_data, atac_data, cell_metadata) {
+  # Preprocess RNA data
+  rna_processed <- findDifferentialGenes(
+    object = rna_data,
+    group_var = "condition",
+    cell_type_var = "cell_type"
+  )
+  
+  # Preprocess ATAC data
+  atac_processed <- findDifferentialGenes(
+    object = atac_data,
+    group_var = "condition",
+    cell_type_var = "cell_type"
+  )
+  
+  # Integrate modalities
+  integrated_data <- integrateMultiModalData(
+    data_list = list(rna_data, atac_data),
+    modality_names = c("RNA", "ATAC"),
+    cell_type_var = "cell_type"
+  )
+  
+  # Analyze cell type heterogeneity across modalities
+  heterogeneity_analysis <- analyzeMultiModalHeterogeneity(
+    integration_results = integrated_data
+  )
+  
+  # Identify conserved and modality-specific markers
+  conserved_markers <- heterogeneity_analysis$conserved_markers
+  rna_specific <- heterogeneity_analysis$modality_specific_markers$RNA
+  atac_specific <- heterogeneity_analysis$modality_specific_markers$ATAC
+  
+  # Generate visualizations
+  plots <- list(
+    integrated_umap = integrated_data$plots$celltype_plot,
+    heatmap_conserved = heterogeneity_analysis$plots$conserved_T_cells,
+    heatmap_rna = heterogeneity_analysis$plots$RNA_B_cells
+  )
+  
+  return(list(
+    integrated_data = integrated_data,
+    markers = list(
+      conserved = conserved_markers,
+      rna_specific = rna_specific,
+      atac_specific = atac_specific
+    ),
+    plots = plots
+  ))
+}
+
+# Example usage:
+# results <- multiOmicWorkflow(rna_data, atac_data, cell_metadata)
+# print(results$plots$integrated_umap)
+```
+
+# Combining CellHet with Other Tools
+
+CellHet works well with other popular single-cell analysis packages. Here's an example of combining CellHet with other tools:
+
+```{r combined-workflow, eval=FALSE}
+# Example workflow combining Seurat, scran, and CellHet
+
+# 1. Initial preprocessing with Seurat
+seurat_obj <- CreateSeuratObject(counts = raw_counts)
+seurat_obj <- NormalizeData(seurat_obj)
+seurat_obj <- FindVariableFeatures(seurat_obj)
+seurat_obj <- ScaleData(seurat_obj)
+seurat_obj <- RunPCA(seurat_obj)
+seurat_obj <- FindNeighbors(seurat_obj)
+seurat_obj <- FindClusters(seurat_obj)
+seurat_obj <- RunUMAP(seurat_obj, dims = 1:30)
+
+# 2. Transfer to SingleCellExperiment for additional analyses
+library(scater)
+library(scran)
+sce <- as.SingleCellExperiment(seurat_obj)
+sce <- computeSumFactors(sce)
+sce <- logNormCounts(sce)
+var_genes <- getTopHVGs(sce, n = 2000)
+
+# 3. Back to Seurat for trajectory analysis
+seurat_obj <- FindVariableFeatures(seurat_obj, selection.method = "vst", nfeatures = 2000)
+seurat_obj <- RunVelocity(seurat_obj) # Using SeuratWrappers
+seurat_obj$pseudotime <- calculatePseudotime(seurat_obj) # Pseudocode function
+
+# 4. CellHet for advanced analysis
+# Differential expression analysis
+deg_results <- findDifferentialGenes(
+  object = seurat_obj,
+  group_var = "condition",
+  cell_type_var = "seurat_clusters"
+)
+
+# Cell type heterogeneity analysis
+heterogeneity_map <- visualizeHeterogeneity(
+  deg_results = deg_results,
+  layout_type = "network",
+  level = "gene"
+)
+
+# Trajectory analysis
+trajectory_results <- analyzeDEGTrajectory(
+  sce = seurat_obj,
+  trajectory_var = "pseudotime",
+  cell_type_var = "seurat_clusters"
+)
+
+# Integrate results
+all_results <- list(
+  degs = deg_results,
+  heterogeneity = heterogeneity_map,
+  trajectory = trajectory_results
+)
+
+# Visualize combined results
+trajectory_degs <- intersect(
+  trajectory_results$top_genes,
+  rownames(deg_results$all_degs[deg_results$all_degs$significant, ])
+)
+
+# Plot trajectory for DEGs
+gene_trajectory_plot <- plotGeneTrajectory(
+  trajectory_results = trajectory_results,
+  genes = trajectory_degs[1:5]
+)
+
+print(gene_trajectory_plot)
+```
+
+# Visualizing Results with Interactive Shiny Apps
+
+CellHet outputs can be easily integrated into interactive Shiny applications for better data exploration:
+
+```{r shiny-app, eval=FALSE}
+# Create a simple Shiny app for DEG exploration
+library(shiny)
+library(DT)
+
+createDEGExplorer <- function(deg_results) {
+  # Define UI
+  ui <- fluidPage(
+    titlePanel("CellHet DEG Explorer"),
+    sidebarLayout(
+      sidebarPanel(
+        selectInput("cellType", "Cell Type:",
+                    choices = unique(deg_results$summary$cell_type)),
+        selectInput("comparison", "Comparison:",
+                    choices = unique(deg_results$summary$comparison)),
+        sliderInput("pvalCutoff", "P-value Cutoff:",
+                    min = 0, max = 0.1, value = 0.05, step = 0.01),
+        radioButtons("direction", "Direction:",
+                    choices = c("Both" = "both", "Up" = "up", "Down" = "down"),
+                    selected = "both")
+      ),
+      mainPanel(
+        tabsetPanel(
+          tabPanel("DEG Table", DTOutput("degTable")),
+          tabPanel("Visualizations", 
+                   plotOutput("heatmapPlot"),
+                   plotOutput("barPlot"))
+        )
+      )
+    )
+  )
+  
+  # Define server
+  server <- function(input, output, session) {
+    # Reactive filtered data
+    filteredDEGs <- reactive({
+      # Get result key
+      result_key <- paste0(input$cellType, "__", input$comparison)
+      
+      # Get DEGs for this key
+      if (!result_key %in% names(deg_results$degs)) {
+        return(data.frame())
+      }
+      
+      degs <- deg_results$degs[[result_key]]
+      
+      # Filter by p-value
+      degs <- degs[degs$p_val_adj < input$pvalCutoff, ]
+      
+      # Filter by direction
+      if (input$direction == "up") {
+        degs <- degs[degs$avg_log2FC > 0, ]
+      } else if (input$direction == "down") {
+        degs <- degs[degs$avg_log2FC < 0, ]
+      }
+      
+      return(degs)
+    })
+    
+    # Render DEG table
+    output$degTable <- renderDT({
+      degs <- filteredDEGs()
+      if (nrow(degs) == 0) {
+        return(data.frame(Message = "No DEGs match the criteria"))
+      }
+      
+      # Format table
+      degs <- degs[order(degs$p_val_adj), ]
+      degs$p_val <- formatC(degs$p_val, format = "e", digits = 2)
+      degs$p_val_adj <- formatC(degs$p_val_adj, format = "e", digits = 2)
+      degs$avg_log2FC <- round(degs$avg_log2FC, 3)
+      
+      return(degs)
+    })
+    
+    # Render heatmap plot
+    output$heatmapPlot <- renderPlot({
+      visualizeDEGHeatmap(
+        deg_results = deg_results,
+        show_reg_indicators = TRUE
+      )
+    })
+    
+    # Render barplot
+    output$barPlot <- renderPlot({
+      visualizeDEGBarplot(
+        deg_results = deg_results,
+        facet_by = "comparison"
+      )
+    })
+  }
+  
+  # Create and return the Shiny app
+  shinyApp(ui, server)
+}
+
+# Example usage:
+# app <- createDEGExplorer(deg_results)
+# runApp(app)
+```
+
+# Working with Large Datasets
+
+CellHet is designed to work efficiently with large single-cell datasets. Here are some tips:
+
+```{r large-datasets, eval=FALSE}
+# For large datasets, consider using these settings:
+
+# 1. Use parallel processing
+deg_results <- findDifferentialGenes(
+  object = large_seurat_obj,
+  group_var = "condition",
+  cell_type_var = "cell_type",
+  workers = 8,  # Use 8 cores for parallel processing
+  future.globals.maxSize = 4 * 1024^3  # Allow 4GB for data transfer
+)
+
+# 2. Process in batches by cell type
+cell_types <- unique(large_seurat_obj$cell_type)
+batch_results <- list()
+
+for (ct in cell_types) {
+  message(paste0("Processing cell type: ", ct))
+  # Subset to this cell type
+  ct_obj <- subset(large_seurat_obj, cell_type == ct)
+  
+  # Run analysis
+  ct_result <- quickCompare(
+    object = ct_obj,
+    cell_types = ct,
+    group1 = "Treatment",
+    group2 = "Control"
+  )
+  
+  # Store result
+  batch_results[[ct]] <- ct_result
+}
+
+# 3. Combine batch results
+all_degs <- do.call(rbind, batch_results)
+
+# 4. Export to file for faster loading in future sessions
+exportDEGResults(
+  deg_results = all_degs,
+  file_path = "large_dataset_degs.xlsx",
+  split_by = "cell_type"
+)
+```
+
+# Custom Analysis Workflows
+
+CellHet functions can be combined to create custom analysis workflows:
+
+```{r custom-workflow, eval=FALSE}
+# Define a custom analysis workflow
+multiConditionAnalysis <- function(seurat_obj, 
+                                 cell_type_var = "cell_type",
+                                 reference_condition = "Control") {
+  
+  # Get all conditions
+  conditions <- unique(seurat_obj$condition)
+  all_conditions <- setdiff(conditions, reference_condition)
+  
+  # Initialize results
+  all_results <- list()
+  
+  # For each condition vs reference
+  for (cond in all_conditions) {
+    message(paste0("Analyzing ", cond, " vs ", reference_condition))
+    
+    # Subset to these two conditions
+    subset_obj <- subset(seurat_obj, condition %in% c(cond, reference_condition))
+    
+    # Run DEG analysis
+    deg_result <- findDifferentialGenes(
+      object = subset_obj,
+      group_var = "condition",
+      cell_type_var = cell_type_var,
+      reference_group = reference_condition
+    )
+    
+    # Analyze heterogeneity
+    het_result <- visualizeHeterogeneity(
+      deg_results = deg_result,
+      layout_type = "network"
+    )
+    
+    # Run pathway analysis
+    pathway_result <- runPathwayAnalysis(
+      deg_results = deg_result
+    )
+    
+    # Visualize pathways
+    pathway_viz <- visualizePathways(
+      pathway_results = pathway_result,
+      plot_type = "dotplot"
+    )
+    
+    # Store results
+    all_results[[cond]] <- list(
+      degs = deg_result,
+      heterogeneity = het_result,
+      pathways = pathway_result,
+      plots = list(
+        het_plot = het_result$plot,
+        pathway_plot = pathway_viz
+      )
+    )
+  }
+  
+  # Create comparison of all conditions
+  response_comparison <- data.frame()
+  
+  for (cond in all_conditions) {
+    # Extract summary data
+    cond_summary <- all_results[[cond]]$degs$summary
+    cond_summary$condition <- cond
+    
+    # Append to comparison
+    response_comparison <- rbind(response_comparison, cond_summary)
+  }
+  
+  # Create comparative barplot
+  comp_plot <- ggplot(response_comparison, aes(x = cell_type, y = n_significant, fill = condition)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    theme_minimal() +
+    labs(title = "DEG Response Across Conditions",
+         x = "Cell Type",
+         y = "Number of DEGs") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  # Add to results
+  all_results$comparison_plot <- comp_plot
+  all_results$response_comparison <- response_comparison
+  
+  return(all_results)
+}
+
+# Example usage:
+# multi_condition_results <- multiConditionAnalysis(seurat_obj)
+# print(multi_condition_results$comparison_plot)
+```
+
+# Conclusion
+
+CellHet provides a comprehensive toolkit for analyzing cell heterogeneity in single-cell RNA-seq data. With its flexible functions and intuitive visualization capabilities, you can quickly identify and interpret differential gene expression patterns across cell types and conditions.
+
+For more information, refer to the package documentation or visit the GitHub repository at [https://github.com/guokai8/CellHet](https://github.com/guokai8/CellHet).

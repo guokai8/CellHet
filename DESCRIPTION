@@ -1,0 +1,54 @@
+Package: CellHet
+Title: Analysis of Cell Heterogeneity in Single-Cell Data
+Version: 0.0.1
+Date: 2025-04-14
+Authors@R: 
+    person("Kai", "Guo", email = "guokai8@gmail.com", role = c("aut", "cre"))
+Description: A comprehensive toolkit for analyzing cell heterogeneity in single-cell RNA-seq data
+    across multiple group comparisons. CellHet provides functions to analyze and visualize 
+    differential gene expression, shared molecular signatures, pathway enrichment, and
+    cell type heterogeneity in complex experimental designs. The package includes tools
+    for quantifying the degree of heterogeneity in cell type responses and identifying 
+    unique and shared molecular features that characterize different cell populations.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    Seurat (>= 4.0.0),
+    SingleCellExperiment,
+    ggplot2 (>= 3.3.0),
+    dplyr (>= 1.0.0),
+    tidyr (>= 1.1.0),
+    reshape2,
+    ComplexHeatmap,
+    scales,
+    igraph,
+    ggraph,
+    fgsea,
+    patchwork,
+    stats,
+    utils,
+    methods
+Suggests:
+    scran,
+    ReactomePA,
+    BiocManager,
+    plotly,
+    VennDiagram,
+    PMCMR,
+    dunn.test,
+    cluster,
+    ggsignif,
+    knitr,
+    rmarkdown,
+    circlize,
+    grid,
+    fmsb,
+    openxlsx,
+    future,
+    Shiny,
+    flexdashboard
+Bioconductor: true
+VignetteBuilder: knitr
