@@ -70,7 +70,7 @@ pbmc_small <- FindClusters(pbmc_small, resolution = 0.5)
 pbmc_small <- RunUMAP(pbmc_small, dims = 1:10)
 
 # Visualize UMAP with clusters
-DimPlot(pbmc_small, group.by = "seurat_clusters", label = TRUE) + 
+DimPlot(pbmc_small, group.by = "group", label = TRUE) + 
   ggtitle("PBMC Clusters")
 ```
 
@@ -82,12 +82,12 @@ Now, let's use CellHet to find differentially expressed genes between conditions
 # Identify differentially expressed genes
 deg_results <- findDifferentialGenes(
   object = pbmc_small,
-  group_var = "condition",
+  group_var = "group",
   cell_type_var = "seurat_clusters",
   min_cells = 3,
   logfc.threshold = 0.25,
   p_val_adj_threshold = 0.05,
-  test.use = "wilcox",
+  test.use = "wilcox",reference_group = "HFD",
   return_summary = TRUE
 )
 
@@ -112,8 +112,8 @@ print(heatmap_plot)
 # Create a barplot of DEGs
 barplot <- visualizeDEGBarplot(
   deg_results = deg_results,
-  up_color = "red",
-  down_color = "blue",
+  up_color = "darkorange",
+  down_color = "deepskyblue",
   facet_by = "comparison"
 )
 print(barplot)
@@ -267,7 +267,7 @@ CellHet can integrate and analyze multiple data modalities such as scRNA-seq, sc
 # Integrate multiple modalities
 integration_results <- integrateMultiModalData(
   data_list = list(rna_data, atac_data),
-  modality_names = c("RNA", "ATAC"),
+  modality_names = c("RNA", "RNA2"),
   cell_type_var = "cell_type",
   integration_method = "harmony",
   dim_reduction = "umap"
