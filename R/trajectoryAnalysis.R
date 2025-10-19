@@ -3,13 +3,13 @@
 #' Identifies and visualizes gene expression changes along a pseudotime trajectory or other
 #' continuous variable in single-cell data.
 #'
-#' @param sce SingleCellExperiment or Seurat object with trajectory information
+#' @param object SingleCellExperiment or Seurat object with trajectory information
 #' @param trajectory_var Name of the column containing pseudotime or trajectory information
 #' @param cell_type_var Name of the column containing cell type annotations (default: "cell_type")
 #' @param group_var Optional name of the column for grouping cells (e.g., condition, treatment)
 #' @param n_bins Number of bins to divide the trajectory into (default: 10)
 #' @param gene_set Optional vector of genes to analyze (default: all genes)
-#' @param min_cells Minimum number of cells required in each bin (default: 5)
+#' @param min_cells_per_bin Minimum number of cells required in each bin (default: 5)
 #' @param smooth_method Method for smoothing gene expression trends ("loess", "gam", or "none")
 #' @param n_top_genes Number of top dynamic genes to return (default: 50)
 #' @param cluster_genes Logical, whether to cluster genes by expression pattern (default: TRUE)
@@ -18,13 +18,13 @@
 #'
 #' @return A list containing trajectory analysis results and visualizations
 #' @export
-analyzeDEGTrajectory <- function(sce,
+analyzeDEGTrajectory <- function(object,
                                  trajectory_var,
                                  cell_type_var = "cell_type",
                                  group_var = NULL,
                                  n_bins = 10,
                                  gene_set = NULL,
-                                 min_cells = 5,
+                                 min_cells_per_bin = 5,
                                  smooth_method = "loess",
                                  n_top_genes = 50,
                                  cluster_genes = TRUE,
@@ -32,8 +32,8 @@ analyzeDEGTrajectory <- function(sce,
                                  plot_type = "both") {
 
   # Check if input is Seurat or SingleCellExperiment
-  is_seurat <- inherits(sce, "Seurat")
-  is_sce <- inherits(sce, "SingleCellExperiment")
+  is_seurat <- inherits(object, "Seurat")
+  is_sce <- inherits(object, "SingleCellExperiment")
 
   if (!is_seurat && !is_sce) {
     stop("Input must be a Seurat or SingleCellExperiment object")
@@ -41,12 +41,12 @@ analyzeDEGTrajectory <- function(sce,
 
   # Extract metadata
   if (is_seurat) {
-    metadata <- sce@meta.data
+    metadata <- object@meta.data
     if (!requireNamespace("Seurat", quietly = TRUE)) {
       stop("Package 'Seurat' required for processing Seurat objects")
     }
   } else {
-    metadata <- as.data.frame(SingleCellExperiment::colData(sce))
+    metadata <- as.data.frame(SingleCellExperiment::colData(object))
     if (!requireNamespace("SingleCellExperiment", quietly = TRUE)) {
       stop("Package 'SingleCellExperiment' required for processing SCE objects")
     }
@@ -74,9 +74,9 @@ analyzeDEGTrajectory <- function(sce,
     trajectory_values <- trajectory_values[valid_cells]
 
     if (is_seurat) {
-      sce <- subset(sce, cells = rownames(metadata))
+      object <- subset(object, cells = rownames(metadata))
     } else {
-      sce <- sce[, rownames(metadata)]
+      object <- object[, rownames(metadata)]
     }
   }
 
@@ -111,28 +111,28 @@ analyzeDEGTrajectory <- function(sce,
 
   # Check cell counts per bin and warn if any are below threshold
   bin_counts <- table(bin_assignments)
-  small_bins <- which(bin_counts < min_cells)
+  small_bins <- which(bin_counts < min_cells_per_bin)
   if (length(small_bins) > 0) {
-    warning(paste0("Bins ", paste(small_bins, collapse = ", "), " have fewer than ", min_cells, " cells"))
+    warning(paste0("Bins ", paste(small_bins, collapse = ", "), " have fewer than ", min_cells_per_bin, " cells"))
   }
 
   # Prepare expression matrix
   if (is_seurat) {
     # Extract normalized expression data
-    if (!"RNA" %in% names(sce@assays)) {
+    if (!"RNA" %in% names(object@assays)) {
       stop("RNA assay not found in Seurat object")
     }
-    expression_matrix <- Seurat::GetAssayData(sce, slot = "data", assay = "RNA")
+    expression_matrix <- Seurat::GetAssayData(object, slot = "data", assay = "RNA")
   } else {
     # For SingleCellExperiment
-    if (!"logcounts" %in% SingleCellExperiment::assayNames(sce)) {
+    if (!"logcounts" %in% SingleCellExperiment::assayNames(object)) {
       warning("logcounts not found in SingleCellExperiment object. Using counts instead.")
-      if (!"counts" %in% SingleCellExperiment::assayNames(sce)) {
+      if (!"counts" %in% SingleCellExperiment::assayNames(object)) {
         stop("Neither logcounts nor counts found in SingleCellExperiment object")
       }
-      expression_matrix <- SingleCellExperiment::counts(sce)
+      expression_matrix <- SingleCellExperiment::counts(object)
     } else {
-      expression_matrix <- SingleCellExperiment::logcounts(sce)
+      expression_matrix <- SingleCellExperiment::logcounts(object)
     }
   }
 
@@ -707,13 +707,13 @@ plotGeneTrajectory <- function(trajectory_results,
 #'
 #' Compares gene expression trajectories between two or more conditions along a trajectory.
 #'
-#' @param sce SingleCellExperiment or Seurat object with trajectory information
+#' @param object SingleCellExperiment or Seurat object with trajectory information
 #' @param trajectory_var Name of the column containing pseudotime or trajectory information
 #' @param group_var Name of the column for condition/group comparison
 #' @param cell_type_var Name of the column for cell type (default: "cell_type")
 #' @param cell_types Optional vector of cell types to include (default: all cell types)
 #' @param n_bins Number of bins to divide the trajectory into (default: 10)
-#' @param min_cells Minimum number of cells required in each bin-group combination (default: 3)
+#' @param min_cells_per_bin Minimum number of cells required in each bin-group combination (default: 3)
 #' @param n_top_genes Number of top differentially expressed genes to return (default: 50)
 #' @param test_method Statistical test to use for identifying differential trajectories (default: "anova")
 #' @param p_adj_method Method for p-value adjustment (default: "BH")
@@ -722,13 +722,13 @@ plotGeneTrajectory <- function(trajectory_results,
 #'
 #' @return A list containing differential trajectory analysis results and visualizations
 #' @export
-diffTrajectoryAnalysis <- function(sce,
+diffTrajectoryAnalysis <- function(object,
                                    trajectory_var,
                                    group_var,
                                    cell_type_var = "cell_type",
                                    cell_types = NULL,
                                    n_bins = 10,
-                                   min_cells = 3,
+                                   min_cells_per_bin = 3,
                                    n_top_genes = 50,
                                    test_method = "anova",
                                    p_adj_method = "BH",
@@ -736,8 +736,8 @@ diffTrajectoryAnalysis <- function(sce,
                                    smooth_method = "loess") {
 
   # Check if input is Seurat or SingleCellExperiment
-  is_seurat <- inherits(sce, "Seurat")
-  is_sce <- inherits(sce, "SingleCellExperiment")
+  is_seurat <- inherits(object, "Seurat")
+  is_sce <- inherits(object, "SingleCellExperiment")
 
   if (!is_seurat && !is_sce) {
     stop("Input must be a Seurat or SingleCellExperiment object")
@@ -751,12 +751,12 @@ diffTrajectoryAnalysis <- function(sce,
 
   # Extract metadata
   if (is_seurat) {
-    metadata <- sce@meta.data
+    metadata <- object@meta.data
     if (!requireNamespace("Seurat", quietly = TRUE)) {
       stop("Package 'Seurat' required for processing Seurat objects")
     }
   } else {
-    metadata <- as.data.frame(SingleCellExperiment::colData(sce))
+    metadata <- as.data.frame(SingleCellExperiment::colData(object))
     if (!requireNamespace("SingleCellExperiment", quietly = TRUE)) {
       stop("Package 'SingleCellExperiment' required for processing SCE objects")
     }
@@ -790,9 +790,9 @@ diffTrajectoryAnalysis <- function(sce,
     metadata <- metadata[cell_mask, ]
 
     if (is_seurat) {
-      sce <- subset(sce, cells = rownames(metadata))
+      object <- subset(object, cells = rownames(metadata))
     } else {
-      sce <- sce[, rownames(metadata)]
+      object <- object[, rownames(metadata)]
     }
   } else {
     valid_cell_types <- unique(metadata[[cell_type_var]])
@@ -807,9 +807,9 @@ diffTrajectoryAnalysis <- function(sce,
     trajectory_values <- trajectory_values[valid_cells]
 
     if (is_seurat) {
-      sce <- subset(sce, cells = rownames(metadata))
+      object <- subset(object, cells = rownames(metadata))
     } else {
-      sce <- sce[, rownames(metadata)]
+      object <- object[, rownames(metadata)]
     }
   }
 
@@ -831,29 +831,29 @@ diffTrajectoryAnalysis <- function(sce,
 
   # Check sample size per bin/group
   bin_group_counts <- table(metadata$bin, metadata[[group_var]])
-  small_combinations <- which(bin_group_counts < min_cells, arr.ind = TRUE)
+  small_combinations <- which(bin_group_counts < min_cells_per_bin, arr.ind = TRUE)
   if (nrow(small_combinations) > 0) {
-    warning(paste0(nrow(small_combinations), " bin-group combinations have fewer than ", min_cells, " cells"))
+    warning(paste0(nrow(small_combinations), " bin-group combinations have fewer than ", min_cells_per_bin, " cells"))
   }
 
   # Prepare expression matrix
   # Prepare expression matrix
   if (is_seurat) {
     # Extract normalized expression data
-    if (!"RNA" %in% names(sce@assays)) {
+    if (!"RNA" %in% names(object@assays)) {
       stop("RNA assay not found in Seurat object")
     }
-    expression_matrix <- Seurat::GetAssayData(sce, slot = "data", assay = "RNA")
+    expression_matrix <- Seurat::GetAssayData(object, slot = "data", assay = "RNA")
   } else {
     # For SingleCellExperiment
-    if (!"logcounts" %in% SingleCellExperiment::assayNames(sce)) {
+    if (!"logcounts" %in% SingleCellExperiment::assayNames(object)) {
       warning("logcounts not found in SingleCellExperiment object. Using counts instead.")
-      if (!"counts" %in% SingleCellExperiment::assayNames(sce)) {
+      if (!"counts" %in% SingleCellExperiment::assayNames(object)) {
         stop("Neither logcounts nor counts found in SingleCellExperiment object")
       }
-      expression_matrix <- SingleCellExperiment::counts(sce)
+      expression_matrix <- SingleCellExperiment::counts(object)
     } else {
-      expression_matrix <- SingleCellExperiment::logcounts(sce)
+      expression_matrix <- SingleCellExperiment::logcounts(object)
     }
   }
 
@@ -869,7 +869,7 @@ diffTrajectoryAnalysis <- function(sce,
       bin_group_cells <- rownames(metadata)[metadata$bin == b & metadata[[group_var]] == group]
 
       # Check if we have enough cells
-      if (length(bin_group_cells) >= min_cells) {
+      if (length(bin_group_cells) >= min_cells_per_bin) {
         # Have enough cells, calculate mean expression
         group_bin_expression[[group]][, b] <- rowMeans(expression_matrix[, bin_group_cells, drop = FALSE])
       } else if (length(bin_group_cells) == 1) {

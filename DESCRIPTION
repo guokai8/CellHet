@@ -46,7 +46,10 @@ Imports:
     grid,
     grDevices,
     plotly,
-    FNN
+    FNN,
+    shiny (>= 1.7.0),
+    shinythemes,
+    DT
 Suggests:
     scran,
     richR,
@@ -72,7 +75,6 @@ Suggests:
     mclust,
     aricode,
     gridExtra,
-    shiny,
     flexdashboard,
     knitr,
     rmarkdown,

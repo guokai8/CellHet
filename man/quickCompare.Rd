@@ -11,10 +11,11 @@ quickCompare(
   group2,
   group_var = "condition",
   cell_type_var = "cell_type",
-  logfc.threshold = 0.25,
+  logfc_threshold = 0.25,
+  p_val_threshold = NULL,
   p_val_adj_threshold = 0.05,
-  test.use = "wilcox",
-  min_cells = 3,
+  test_method = "wilcox",
+  min_cells_per_group = 3,
   gene_id_mapping = NULL,
   return_plot = TRUE,
   reference_group = NULL
@@ -33,13 +34,15 @@ quickCompare(
 
 \item{cell_type_var}{Name of the column in metadata containing cell type annotations}
 
-\item{logfc.threshold}{Log fold-change threshold for DEG identification}
+\item{logfc_threshold}{Log fold-change threshold for DEG identification}
 
-\item{p_val_adj_threshold}{Adjusted p-value threshold for significance}
+\item{p_val_threshold}{P-value threshold (unadjusted, default: NULL uses adjusted)}
 
-\item{test.use}{Statistical test to use for differential expression}
+\item{p_val_adj_threshold}{Adjusted p-value threshold for significance (default: 0.05)}
 
-\item{min_cells}{Minimum number of cells required per group for comparison}
+\item{test_method}{Statistical test to use for differential expression}
+
+\item{min_cells_per_group}{Minimum number of cells required per group for comparison}
 
 \item{gene_id_mapping}{Optional data frame for gene ID mapping}
 

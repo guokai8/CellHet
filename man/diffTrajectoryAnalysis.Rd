@@ -5,13 +5,13 @@
 \title{Differential Trajectory Analysis Between Conditions}
 \usage{
 diffTrajectoryAnalysis(
-  sce,
+  object,
   trajectory_var,
   group_var,
   cell_type_var = "cell_type",
   cell_types = NULL,
   n_bins = 10,
-  min_cells = 3,
+  min_cells_per_bin = 3,
   n_top_genes = 50,
   test_method = "anova",
   p_adj_method = "BH",
@@ -20,7 +20,7 @@ diffTrajectoryAnalysis(
 )
 }
 \arguments{
-\item{sce}{SingleCellExperiment or Seurat object with trajectory information}
+\item{object}{SingleCellExperiment or Seurat object with trajectory information}
 
 \item{trajectory_var}{Name of the column containing pseudotime or trajectory information}
 
@@ -32,7 +32,7 @@ diffTrajectoryAnalysis(
 
 \item{n_bins}{Number of bins to divide the trajectory into (default: 10)}
 
-\item{min_cells}{Minimum number of cells required in each bin-group combination (default: 3)}
+\item{min_cells_per_bin}{Minimum number of cells required in each bin-group combination (default: 3)}
 
 \item{n_top_genes}{Number of top differentially expressed genes to return (default: 50)}
 

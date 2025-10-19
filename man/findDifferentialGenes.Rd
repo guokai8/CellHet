@@ -8,11 +8,12 @@ findDifferentialGenes(
   object,
   group_var = "condition",
   cell_type_var = "cell_type",
-  min_cells = 3,
-  logfc.threshold = 0.25,
+  min_cells_per_group = 3,
+  logfc_threshold = 0.25,
+  p_val_threshold = NULL,
   p_val_adj_threshold = 0.05,
   p_val_cutoff = 0.05,
-  test.use = "wilcox",
+  test_method = "wilcox",
   workers = NULL,
   future.globals.maxSize = 1024^3,
   gene_id_mapping = NULL,
@@ -31,15 +32,17 @@ findDifferentialGenes(
 
 \item{cell_type_var}{Name of the column in metadata containing cell type annotations}
 
-\item{min_cells}{Minimum number of cells required per group for comparison}
+\item{min_cells_per_group}{Minimum number of cells required per group for comparison}
 
-\item{logfc.threshold}{Log fold-change threshold for DEGs}
+\item{logfc_threshold}{Log fold-change threshold for DEGs}
 
-\item{p_val_adj_threshold}{Adjusted p-value threshold for significance}
+\item{p_val_threshold}{P-value threshold (unadjusted, default: NULL uses adjusted)}
+
+\item{p_val_adj_threshold}{Adjusted p-value threshold for significance (default: 0.05)}
 
 \item{p_val_cutoff}{p-value threshold for enrichment analysis}
 
-\item{test.use}{Statistical test to use for differential expression}
+\item{test_method}{Statistical test to use for differential expression}
 
 \item{workers}{Number of cores to use for parallel processing (NULL for sequential)}
 

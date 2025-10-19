@@ -1,30 +1,34 @@
 #' Compare DEGs Across Cell Types and Conditions
 #'
-#' @param sce SingleCellExperiment or Seurat object with annotated cell types
+#' @param object SingleCellExperiment or Seurat object with annotated cell types
 #' @param group_var Name of the column in metadata containing group information
 #' @param cell_type_var Name of the column in metadata containing cell type annotations
-#' @param min_cells Minimum number of cells required per group for comparison
-#' @param test.use Statistical test to use for differential expression
-#' @param logfc.threshold Log fold-change threshold for DEGs identification (not for filtering results)
-#' @param p_val_adj_threshold Adjusted p-value threshold for significance
+#' @param reference_group Optional reference group for comparisons (if NULL, all pairwise comparisons)
+#' @param min_cells_per_group Minimum number of cells required per group for comparison
+#' @param test_method Statistical test to use for differential expression
+#' @param logfc_threshold Log fold-change threshold for DEGs identification
+#' @param p_val_threshold P-value threshold for significance (unadjusted, default: NULL)
+#' @param p_val_adj_threshold Adjusted p-value threshold for significance (default: 0.05)
 #' @param custom_comparisons Optional list of custom comparisons to perform
 #' @param cores Number of cores to use for parallel processing
 #'
 #' @return A list containing DEG results for each cell type and comparison
 #' @export
-compareDEGs <- function(sce,
+compareDEGs <- function(object,
                         group_var = "condition",
                         cell_type_var = "cell_type",
-                        min_cells = 3,
-                        test.use = "wilcox",
-                        logfc.threshold = 0.25,
+                        reference_group = NULL,
+                        min_cells_per_group = 3,
+                        test_method = "wilcox",
+                        logfc_threshold = 0.25,
+                        p_val_threshold = NULL,
                         p_val_adj_threshold = 0.05,
                         custom_comparisons = NULL,
                         cores = 1) {
 
   # Check if input is Seurat or SingleCellExperiment
-  is_seurat <- inherits(sce, "Seurat")
-  is_sce <- inherits(sce, "SingleCellExperiment")
+  is_seurat <- inherits(object, "Seurat")
+  is_sce <- inherits(object, "SingleCellExperiment")
 
   if (!is_seurat && !is_sce) {
     stop("Input must be a Seurat or SingleCellExperiment object")
@@ -32,9 +36,9 @@ compareDEGs <- function(sce,
 
   # Extract metadata
   if (is_seurat) {
-    metadata <- sce@meta.data
+    metadata <- object@meta.data
   } else {
-    metadata <- as.data.frame(colData(sce))
+    metadata <- as.data.frame(colData(object))
   }
 
   # Check if required columns exist in metadata
@@ -52,8 +56,17 @@ compareDEGs <- function(sce,
 
   # Define comparisons
   if (is.null(custom_comparisons)) {
-    # Generate all pairwise comparisons
-    all_comparisons <- combn(unique_groups, 2, simplify = FALSE)
+    if (!is.null(reference_group)) {
+      # Generate comparisons against reference group
+      if (!reference_group %in% unique_groups) {
+        stop(paste0("Reference group '", reference_group, "' not found in data"))
+      }
+      other_groups <- setdiff(unique_groups, reference_group)
+      all_comparisons <- lapply(other_groups, function(g) c(g, reference_group))
+    } else {
+      # Generate all pairwise comparisons
+      all_comparisons <- combn(unique_groups, 2, simplify = FALSE)
+    }
   } else {
     # Use user-defined comparisons
     all_comparisons <- custom_comparisons
@@ -73,9 +86,9 @@ compareDEGs <- function(sce,
   for (cell_type in unique_cell_types) {
     # Subset data for current cell type
     if (is_seurat) {
-      cell_subset <- subset(sce, cells = which(metadata[[cell_type_var]] == cell_type))
+      cell_subset <- subset(object, cells = which(metadata[[cell_type_var]] == cell_type))
     } else {
-      cell_subset <- sce[, metadata[[cell_type_var]] == cell_type]
+      cell_subset <- object[, metadata[[cell_type_var]] == cell_type]
     }
 
     # Process each comparison
@@ -94,7 +107,7 @@ compareDEGs <- function(sce,
       }
 
       # Skip if not enough cells
-      if (n_cells_group1 < min_cells || n_cells_group2 < min_cells) {
+      if (n_cells_group1 < min_cells_per_group || n_cells_group2 < min_cells_per_group) {
         message(paste0("Skipping ", cell_type, ": ", group1, " vs ", group2,
                        " (insufficient cells: ", n_cells_group1, ", ", n_cells_group2, ")"))
         next
@@ -102,15 +115,16 @@ compareDEGs <- function(sce,
 
       # Run differential expression
       if (is_seurat) {
-        Idents(cell_subset) <- cell_subset@meta.data[[group_var]]
+        # Set identities using Seurat namespace
+        Seurat::Idents(cell_subset) <- cell_subset@meta.data[[group_var]]
 
-        # [REVISED] Get all genes with no logFC threshold
-        deg <- FindMarkers(cell_subset,
-                           ident.1 = group1,
-                           ident.2 = group2,
-                           test.use = test.use,
-                           logfc.threshold = 0,  # [REVISED] No threshold to keep all genes
-                           min.pct = 0)  # [REVISED] Include all genes
+        # Get all genes with no logFC threshold for filtering
+        deg <- Seurat::FindMarkers(cell_subset,
+                                   ident.1 = group1,
+                                   ident.2 = group2,
+                                   test.use = test_method,
+                                   logfc.threshold = 0,  # No threshold to keep all genes
+                                   min.pct = 0)  # Include all genes
 
       } else {
         # For SingleCellExperiment, use scran functions
@@ -139,11 +153,17 @@ compareDEGs <- function(sce,
       # Add gene names as column
       deg$gene <- rownames(deg)
 
-      # [REVISED] Add threshold passing info - keeping all genes but flagging those that pass threshold
-      deg$passes_lfc_threshold <- abs(deg$avg_log2FC) >= logfc.threshold
+      # Add threshold passing info - keeping all genes but flagging those that pass threshold
+      deg$passes_lfc_threshold <- abs(deg$avg_log2FC) >= logfc_threshold
 
-      # Apply significance threshold - this defines "significant" based on p-value only
-      deg$significant <- deg$p_val_adj < p_val_adj_threshold
+      # Apply significance threshold - use either p-value or adjusted p-value
+      if (!is.null(p_val_threshold)) {
+        # Use unadjusted p-value if specified
+        deg$significant <- deg$p_val < p_val_threshold
+      } else {
+        # Use adjusted p-value (default)
+        deg$significant <- deg$p_val_adj < p_val_adj_threshold
+      }
 
       # Classify as up/down regulated
       deg$direction <- ifelse(deg$avg_log2FC > 0, "up", "down")
@@ -153,7 +173,7 @@ compareDEGs <- function(sce,
       result_key <- paste(cell_type, comparison_name, sep = "__")
       deg_results[[result_key]] <- deg
 
-      # [REVISED] Compute summary statistics - only count genes that pass both p-value AND logFC threshold as DEGs
+      # Compute summary statistics - only count genes that pass both p-value AND logFC threshold as DEGs
       n_up <- sum(deg$significant & deg$direction == "up" & deg$passes_lfc_threshold)
       n_down <- sum(deg$significant & deg$direction == "down" & deg$passes_lfc_threshold)
 
@@ -166,7 +186,7 @@ compareDEGs <- function(sce,
         n_cells_group1 = n_cells_group1,
         n_cells_group2 = n_cells_group2,
         n_genes_tested = nrow(deg),
-        n_significant = sum(deg$significant & deg$passes_lfc_threshold), # [REVISED]
+        n_significant = sum(deg$significant & deg$passes_lfc_threshold),
         n_up = n_up,
         n_down = n_down
       )
@@ -183,11 +203,14 @@ compareDEGs <- function(sce,
       cell_types = unique_cell_types,
       groups = unique_groups,
       comparisons = all_comparisons,
+      reference_group = reference_group,
       parameters = list(
-        min_cells = min_cells,
-        test.use = test.use,
-        logfc.threshold = logfc.threshold,
-        p_val_adj_threshold = p_val_adj_threshold
+        min_cells_per_group = min_cells_per_group,
+        test_method = test_method,
+        logfc_threshold = logfc_threshold,
+        p_val_threshold = p_val_threshold,
+        p_val_adj_threshold = p_val_adj_threshold,
+        using_adjusted_pval = is.null(p_val_threshold)
       )
     )
   )

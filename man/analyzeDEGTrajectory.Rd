@@ -5,13 +5,13 @@
 \title{Analyze DEG Changes Along a Trajectory}
 \usage{
 analyzeDEGTrajectory(
-  sce,
+  object,
   trajectory_var,
   cell_type_var = "cell_type",
   group_var = NULL,
   n_bins = 10,
   gene_set = NULL,
-  min_cells = 5,
+  min_cells_per_bin = 5,
   smooth_method = "loess",
   n_top_genes = 50,
   cluster_genes = TRUE,
@@ -20,7 +20,7 @@ analyzeDEGTrajectory(
 )
 }
 \arguments{
-\item{sce}{SingleCellExperiment or Seurat object with trajectory information}
+\item{object}{SingleCellExperiment or Seurat object with trajectory information}
 
 \item{trajectory_var}{Name of the column containing pseudotime or trajectory information}
 
@@ -32,7 +32,7 @@ analyzeDEGTrajectory(
 
 \item{gene_set}{Optional vector of genes to analyze (default: all genes)}
 
-\item{min_cells}{Minimum number of cells required in each bin (default: 5)}
+\item{min_cells_per_bin}{Minimum number of cells required in each bin (default: 5)}
 
 \item{smooth_method}{Method for smoothing gene expression trends ("loess", "gam", or "none")}
 

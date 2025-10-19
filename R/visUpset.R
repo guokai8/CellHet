@@ -51,9 +51,9 @@
 #'
 #' @importFrom magrittr %>%
 #' @import ggplot2
-#' @importFrom dplyr n desc group_by
+#' @importFrom dplyr n desc group_by left_join
 #' @importFrom dplyr filter select group_by_all summarise arrange pull if_else
-#' @importFrom tidyr pivot_longer
+#' @importFrom tidyr pivot_longer pivot_wider
 #' @importFrom stats setNames
 #' @importFrom patchwork plot_layout plot_annotation plot_spacer
 #' @importFrom plotly ggplotly
@@ -291,12 +291,8 @@ upsetPlot <- function(data_list,
 
   # Define set colors if not provided
   if (is.null(sets_bar_colors)) {
-    # Default color palette for sets
-    default_colors <- c(
-      "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
-      "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
-      "#999999", "#66C2A5", "#FC8D62", "#8DA0CB"
-    )
+    # Use CellHet default color palette
+    default_colors <- CellHet::cellhet_colors()
 
     # Generate colors for all sets
     sets_bar_colors <- setNames(

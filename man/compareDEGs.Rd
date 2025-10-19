@@ -5,31 +5,37 @@
 \title{Compare DEGs Across Cell Types and Conditions}
 \usage{
 compareDEGs(
-  sce,
+  object,
   group_var = "condition",
   cell_type_var = "cell_type",
-  min_cells = 3,
-  test.use = "wilcox",
-  logfc.threshold = 0.25,
+  reference_group = NULL,
+  min_cells_per_group = 3,
+  test_method = "wilcox",
+  logfc_threshold = 0.25,
+  p_val_threshold = NULL,
   p_val_adj_threshold = 0.05,
   custom_comparisons = NULL,
   cores = 1
 )
 }
 \arguments{
-\item{sce}{SingleCellExperiment or Seurat object with annotated cell types}
+\item{object}{SingleCellExperiment or Seurat object with annotated cell types}
 
 \item{group_var}{Name of the column in metadata containing group information}
 
 \item{cell_type_var}{Name of the column in metadata containing cell type annotations}
 
-\item{min_cells}{Minimum number of cells required per group for comparison}
+\item{reference_group}{Optional reference group for comparisons (if NULL, all pairwise comparisons)}
 
-\item{test.use}{Statistical test to use for differential expression}
+\item{min_cells_per_group}{Minimum number of cells required per group for comparison}
 
-\item{logfc.threshold}{Log fold-change threshold for DEGs identification (not for filtering results)}
+\item{test_method}{Statistical test to use for differential expression}
 
-\item{p_val_adj_threshold}{Adjusted p-value threshold for significance}
+\item{logfc_threshold}{Log fold-change threshold for DEGs identification}
+
+\item{p_val_threshold}{P-value threshold for significance (unadjusted, default: NULL)}
+
+\item{p_val_adj_threshold}{Adjusted p-value threshold for significance (default: 0.05)}
 
 \item{custom_comparisons}{Optional list of custom comparisons to perform}
 

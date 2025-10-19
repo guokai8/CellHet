@@ -3,11 +3,12 @@
 #' @param object Seurat or SingleCellExperiment object
 #' @param group_var Name of the column in metadata containing group information
 #' @param cell_type_var Name of the column in metadata containing cell type annotations
-#' @param min_cells Minimum number of cells required per group for comparison
-#' @param logfc.threshold Log fold-change threshold for DEGs
-#' @param p_val_adj_threshold Adjusted p-value threshold for significance
+#' @param min_cells_per_group Minimum number of cells required per group for comparison
+#' @param logfc_threshold Log fold-change threshold for DEGs
+#' @param p_val_threshold P-value threshold (unadjusted, default: NULL uses adjusted)
+#' @param p_val_adj_threshold Adjusted p-value threshold for significance (default: 0.05)
 #' @param p_val_cutoff p-value threshold for enrichment analysis
-#' @param test.use Statistical test to use for differential expression
+#' @param test_method Statistical test to use for differential expression
 #' @param workers Number of cores to use for parallel processing (NULL for sequential)
 #' @param future.globals.maxSize Maximum size of global variables for parallel processing
 #' @param gene_id_mapping Optional data frame for gene ID mapping with columns "gene" and "id"
@@ -22,11 +23,12 @@
 findDifferentialGenes <- function(object,
                                   group_var = "condition",
                                   cell_type_var = "cell_type",
-                                  min_cells = 3,
-                                  logfc.threshold = 0.25,
+                                  min_cells_per_group = 3,
+                                  logfc_threshold = 0.25,
+                                  p_val_threshold = NULL,
                                   p_val_adj_threshold = 0.05,
                                   p_val_cutoff = 0.05,
-                                  test.use = "wilcox",
+                                  test_method = "wilcox",
                                   workers = NULL,
                                   future.globals.maxSize = 1024^3,
                                   gene_id_mapping = NULL,
@@ -110,12 +112,14 @@ findDifferentialGenes <- function(object,
 
   # Run differential expression analysis
   deg_results <- compareDEGs(
-    sce = object,
+    object = object,
     group_var = group_var,
     cell_type_var = cell_type_var,
-    min_cells = min_cells,
-    test.use = test.use,
-    logfc.threshold = logfc.threshold,
+    reference_group = reference_group,
+    min_cells_per_group = min_cells_per_group,
+    test_method = test_method,
+    logfc_threshold = logfc_threshold,
+    p_val_threshold = p_val_threshold,
     p_val_adj_threshold = p_val_adj_threshold,
     custom_comparisons = custom_comparisons,
     cores = if (!is.null(workers)) workers else 1
@@ -170,10 +174,9 @@ findDifferentialGenes <- function(object,
   # Run pathway analysis if requested
   if (enrich) {
     message("Running pathway analysis...")
-    if (!exists("gene_sets")) {
-      warning("No gene sets available for pathway analysis. Skipping pathway annotation.")
+    if (is.null(annot_data)) {
+      warning("No annotation data provided for pathway analysis. Skipping pathway annotation.")
     } else {
-
       pathway_results <- runPathwayAnalysis(
         deg_results = deg_results,
         annot_data = annot_data,
@@ -186,38 +189,94 @@ findDifferentialGenes <- function(object,
     }
   }
 
-  # Update the summary to account for both significance and logFC threshold
   # Check if we have the passes_lfc_threshold column
   has_lfc_threshold_info <- "passes_lfc_threshold" %in% colnames(all_degs)
 
-  if (has_lfc_threshold_info) {
-    # Create an updated summary
-    summary_data <- all_degs %>%
-      dplyr::group_by(cell_type, comparison) %>%
-      dplyr::summarize(
-        n_up = sum(significant & direction == "up" & passes_lfc_threshold),
-        n_down = sum(significant & direction == "down" & passes_lfc_threshold),
-        n_cells_group1 = dplyr::first(n_cells_group1),
-        n_cells_group2 = dplyr::first(n_cells_group2),
-        n_genes_tested = n(),
-        n_significant = sum(significant & passes_lfc_threshold),
-        group1 = dplyr::first(group1),
-        group2 = dplyr::first(group2),
-        .groups = "drop"
-      )
+  # Create a new summary that's safer and more robust
+  # First check if we have all required columns for the previous approach
+  required_summary_columns <- c("n_cells_group1", "n_cells_group2")
+  has_all_required_columns <- all(required_summary_columns %in% colnames(all_degs))
 
-    deg_results$summary <- summary_data
+  if (has_all_required_columns) {
+    # Continue with original approach if we have all required columns
+    if (has_lfc_threshold_info) {
+      # Create an updated summary
+      summary_data <- all_degs %>%
+        dplyr::group_by(cell_type, comparison) %>%
+        dplyr::summarize(
+          n_up = sum(significant & direction == "up" & passes_lfc_threshold),
+          n_down = sum(significant & direction == "down" & passes_lfc_threshold),
+          n_cells_group1 = dplyr::first(n_cells_group1),
+          n_cells_group2 = dplyr::first(n_cells_group2),
+          n_genes_tested = n(),
+          n_significant = sum(significant & passes_lfc_threshold),
+          group1 = dplyr::first(group1),
+          group2 = dplyr::first(group2),
+          .groups = "drop"
+        )
+    } else {
+      # Without the passes_lfc_threshold column
+      summary_data <- all_degs %>%
+        dplyr::group_by(cell_type, comparison) %>%
+        dplyr::summarize(
+          n_up = sum(significant & direction == "up"),
+          n_down = sum(significant & direction == "down"),
+          n_cells_group1 = dplyr::first(n_cells_group1),
+          n_cells_group2 = dplyr::first(n_cells_group2),
+          n_genes_tested = n(),
+          n_significant = sum(significant),
+          group1 = dplyr::first(group1),
+          group2 = dplyr::first(group2),
+          .groups = "drop"
+        )
+    }
+  } else {
+    # Use a more robust approach that doesn't depend on specific columns
+    if (has_lfc_threshold_info) {
+      # Create a simplified summary
+      summary_data <- all_degs %>%
+        dplyr::group_by(cell_type, comparison) %>%
+        dplyr::summarize(
+          n_up = sum(significant & direction == "up" & passes_lfc_threshold),
+          n_down = sum(significant & direction == "down" & passes_lfc_threshold),
+          n_genes_tested = n(),
+          n_significant = sum(significant & passes_lfc_threshold),
+          group1 = dplyr::first(group1),
+          group2 = dplyr::first(group2),
+          .groups = "drop"
+        )
+    } else {
+      # Without the passes_lfc_threshold column
+      summary_data <- all_degs %>%
+        dplyr::group_by(cell_type, comparison) %>%
+        dplyr::summarize(
+          n_up = sum(significant & direction == "up"),
+          n_down = sum(significant & direction == "down"),
+          n_genes_tested = n(),
+          n_significant = sum(significant),
+          group1 = dplyr::first(group1),
+          group2 = dplyr::first(group2),
+          .groups = "drop"
+        )
+    }
   }
+
+  # Update the summary in the results
+  deg_results$summary <- summary_data
 
   # Create summary visualization if requested
   if (return_summary) {
     message("Generating summary visualization...")
-    summary_plot <- summarizeDEGs(
-      deg_results = deg_results,
-      plot_type = "heatmap",
-      direction = "both"
-    )
-    deg_results$summary_plot <- summary_plot
+    tryCatch({
+      summary_plot <- summarizeDEGs(
+        deg_results = deg_results,
+        plot_type = "heatmap",
+        direction = "both"
+      )
+      deg_results$summary_plot <- summary_plot
+    }, error = function(e) {
+      warning("Could not generate summary plot: ", e$message)
+    })
   }
 
   # Add the combined data frame to results
@@ -239,10 +298,11 @@ findDifferentialGenes <- function(object,
 #' @param group2 Name of second group to compare
 #' @param group_var Name of the column in metadata containing group information
 #' @param cell_type_var Name of the column in metadata containing cell type annotations
-#' @param logfc.threshold Log fold-change threshold for DEG identification
-#' @param p_val_adj_threshold Adjusted p-value threshold for significance
-#' @param test.use Statistical test to use for differential expression
-#' @param min_cells Minimum number of cells required per group for comparison
+#' @param logfc_threshold Log fold-change threshold for DEG identification
+#' @param p_val_threshold P-value threshold (unadjusted, default: NULL uses adjusted)
+#' @param p_val_adj_threshold Adjusted p-value threshold for significance (default: 0.05)
+#' @param test_method Statistical test to use for differential expression
+#' @param min_cells_per_group Minimum number of cells required per group for comparison
 #' @param gene_id_mapping Optional data frame for gene ID mapping
 #' @param return_plot Whether to return a volcano plot of the results
 #' @param reference_group Optional, specify which group should be used as reference
@@ -255,10 +315,11 @@ quickCompare <- function(object,
                          group2,
                          group_var = "condition",
                          cell_type_var = "cell_type",
-                         logfc.threshold = 0.25,
+                         logfc_threshold = 0.25,
+                         p_val_threshold = NULL,
                          p_val_adj_threshold = 0.05,
-                         test.use = "wilcox",
-                         min_cells = 3,
+                         test_method = "wilcox",
+                         min_cells_per_group = 3,
                          gene_id_mapping = NULL,
                          return_plot = TRUE,
                          reference_group = NULL) {
@@ -344,7 +405,7 @@ quickCompare <- function(object,
     }
 
     # Skip if not enough cells
-    if (n_cells_group1 < min_cells || n_cells_group2 < min_cells) {
+    if (n_cells_group1 < min_cells_per_group || n_cells_group2 < min_cells_per_group) {
       message(paste0("Skipping ", ct, ": insufficient cells (",
                      group1, ": ", n_cells_group1, ", ",
                      group2, ": ", n_cells_group2, ")"))
@@ -373,19 +434,23 @@ quickCompare <- function(object,
         }
       }
 
-      # [REVISED] Run FindMarkers with no logFC threshold to get all genes
+      # Run FindMarkers with no logFC threshold to get all genes
       de_results <- Seurat::FindMarkers(
         object = cell_subset,
         ident.1 = ident1,
         ident.2 = ident2,
-        test.use = test.use,
-        logfc.threshold = 0,  # [REVISED] No threshold to get all genes
-        min.pct = 0  # [REVISED] Include all genes
+        test.use = test_method,
+        logfc.threshold = 0,  # No threshold to get all genes
+        min.pct = 0  # Include all genes
       )
 
-      # [REVISED] Mark significant genes and those passing logFC threshold
-      de_results$significant <- de_results$p_val_adj < p_val_adj_threshold
-      de_results$passes_lfc_threshold <- abs(de_results$avg_log2FC) >= logfc.threshold
+      # Mark significant genes - use either p-value or adjusted p-value
+      if (!is.null(p_val_threshold)) {
+        de_results$significant <- de_results$p_val < p_val_threshold
+      } else {
+        de_results$significant <- de_results$p_val_adj < p_val_adj_threshold
+      }
+      de_results$passes_lfc_threshold <- abs(de_results$avg_log2FC) >= logfc_threshold
 
     } else {
       # For SingleCellExperiment, use scran
@@ -412,9 +477,13 @@ quickCompare <- function(object,
       de_results$p_val_adj <- de_results$FDR
       de_results$avg_log2FC <- de_results$logFC
 
-      # [REVISED] Mark significant genes and those passing logFC threshold
-      de_results$significant <- de_results$p_val_adj < p_val_adj_threshold
-      de_results$passes_lfc_threshold <- abs(de_results$avg_log2FC) >= logfc.threshold
+      # Mark significant genes - use either p-value or adjusted p-value
+      if (!is.null(p_val_threshold)) {
+        de_results$significant <- de_results$p_val < p_val_threshold
+      } else {
+        de_results$significant <- de_results$p_val_adj < p_val_adj_threshold
+      }
+      de_results$passes_lfc_threshold <- abs(de_results$avg_log2FC) >= logfc_threshold
     }
 
     # Add gene column
@@ -471,23 +540,26 @@ quickCompare <- function(object,
         plot_data$label[plot_data$gene %in% c(top_up, top_down)] <- plot_data$gene[plot_data$gene %in% c(top_up, top_down)]
       }
 
-      # [REVISED] Create volcano plot - highlight genes that pass both significance and logFC threshold
+      # Create volcano plot - highlight genes that pass both significance and logFC threshold
+      # Determine which p-value threshold to show
+      p_threshold_to_plot <- if (!is.null(p_val_threshold)) p_val_threshold else p_val_adj_threshold
+
       p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = avg_log2FC, y = -log10(p_val_adj),
                                                    color = direction, label = label)) +
-        ggplot2::geom_point(ggplot2::aes(alpha = significant & passes_lfc_threshold)) + # [REVISED]
-        ggplot2::geom_vline(xintercept = c(-logfc.threshold, logfc.threshold),
+        ggplot2::geom_point(ggplot2::aes(alpha = significant & passes_lfc_threshold)) +
+        ggplot2::geom_vline(xintercept = c(-logfc_threshold, logfc_threshold),
                             linetype = "dashed", color = "gray50") +
-        ggplot2::geom_hline(yintercept = -log10(p_val_adj_threshold),
+        ggplot2::geom_hline(yintercept = -log10(p_threshold_to_plot),
                             linetype = "dashed", color = "gray50") +
         ggplot2::scale_color_manual(values = c("down" = "deepskyblue", "up" = "darkorange")) +
         ggplot2::scale_alpha_manual(values = c("TRUE" = 1, "FALSE" = 0.3)) +
         ggplot2::labs(
           title = paste0(ct, ": ", group1, " vs ", group2),
-          subtitle = paste0(sum(plot_data$significant & plot_data$passes_lfc_threshold), # [REVISED]
+          subtitle = paste0(sum(plot_data$significant & plot_data$passes_lfc_threshold),
                             " significant DEGs (",
-                            sum(plot_data$significant & plot_data$passes_lfc_threshold & # [REVISED]
+                            sum(plot_data$significant & plot_data$passes_lfc_threshold &
                                   plot_data$direction == "up"), " up, ",
-                            sum(plot_data$significant & plot_data$passes_lfc_threshold & # [REVISED]
+                            sum(plot_data$significant & plot_data$passes_lfc_threshold &
                                   plot_data$direction == "down"), " down)"),
           x = "Log2 Fold Change",
           y = "-log10(adjusted p-value)"
@@ -495,7 +567,7 @@ quickCompare <- function(object,
         ggplot2::theme_bw()
 
       # Add labels if there are significant genes
-      if (sum(plot_data$significant & plot_data$passes_lfc_threshold) > 0) { # [REVISED]
+      if (sum(plot_data$significant & plot_data$passes_lfc_threshold) > 0) {
         if (requireNamespace("ggrepel", quietly = TRUE)) {
           p <- p + ggrepel::geom_text_repel(
             data = subset(plot_data, label != ""),
