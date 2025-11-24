@@ -458,7 +458,7 @@ multi_modal_data <- simulateMultiModalData(
 
 If you use CellHet in your research, please cite:
 
-[Citation information will be added upon publication]
+[(https://github.com/guokai8/CellHet)]
 
 ## License
 
