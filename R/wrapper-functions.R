@@ -17,8 +17,41 @@
 #' @param return_summary Whether to return a summary plot with the results
 #' @param reference_group Optional, specify a reference group to compare all other groups against
 #' @param reference_cell_type Optional, specify a reference cell type to focus analysis on
+#' @param custom_comparisons Optional list of custom comparisons. If specified, overrides reference_group.
+#'   Each comparison can be: (1) A 2-element vector c("Group1", "Group2"),
+#'   (2) A named list list(test = c("Grp1", "Grp2"), reference = c("Grp3", "Grp4")),
+#'   or (3) A vector with "vs" separator c("Grp1", "Grp2", "vs", "Grp3", "Grp4").
+#'   For multi-group comparisons, cells from multiple groups are pooled together.
 #'
 #' @return A list containing DEG results for each cell type and comparison
+#'
+#' @examples
+#' \dontrun{
+#' # Example 1: Basic analysis with all pairwise comparisons
+#' results <- findDifferentialGenes(seurat_obj,
+#'   group_var = "treatment",
+#'   cell_type_var = "cell_type")
+#'
+#' # Example 2: Using a reference group
+#' results <- findDifferentialGenes(seurat_obj,
+#'   reference_group = "Control",
+#'   logfc_threshold = 0.5,
+#'   p_val_adj_threshold = 0.01)
+#'
+#' # Example 3: Custom many-vs-many comparisons
+#' results <- findDifferentialGenes(seurat_obj,
+#'   custom_comparisons = list(
+#'     list(test = c("Drug_1h", "Drug_3h"), reference = c("Control", "Vehicle")),
+#'     list(test = "Drug_6h", reference = "Control")
+#'   ))
+#'
+#' # Example 4: With enrichment analysis
+#' results <- findDifferentialGenes(seurat_obj,
+#'   reference_group = "Control",
+#'   enrich = TRUE,
+#'   annot_data = "GO")
+#' }
+#'
 #' @export
 findDifferentialGenes <- function(object,
                                   group_var = "condition",
@@ -37,7 +70,8 @@ findDifferentialGenes <- function(object,
                                   use_gsea = FALSE,
                                   return_summary = TRUE,
                                   reference_group = NULL,
-                                  reference_cell_type = NULL) {
+                                  reference_cell_type = NULL,
+                                  custom_comparisons = NULL) {
 
   # Check if input is valid
   is_seurat <- inherits(object, "Seurat")
@@ -91,17 +125,25 @@ findDifferentialGenes <- function(object,
   # Run differential expression analysis
   message("Running differential expression analysis...")
 
-  # Create custom comparisons if reference group is provided
-  custom_comparisons <- NULL
-  if (!is.null(reference_group)) {
-    # Get all other groups
+  # Handle custom comparisons
+  comparisons_to_use <- NULL
+
+  if (!is.null(custom_comparisons)) {
+    # User provided custom comparisons - takes precedence
+    comparisons_to_use <- custom_comparisons
+    message("Using custom comparisons provided by user")
+
+    if (!is.null(reference_group)) {
+      warning("Both custom_comparisons and reference_group specified. Using custom_comparisons.")
+    }
+  } else if (!is.null(reference_group)) {
+    # Generate comparisons against reference group (legacy behavior)
     other_groups <- unique(metadata[[group_var]])
     other_groups <- other_groups[other_groups != reference_group]
-
-    # Create comparisons between reference and each other group
-    custom_comparisons <- lapply(other_groups, function(g) c(g, reference_group))
+    comparisons_to_use <- lapply(other_groups, function(g) c(g, reference_group))
     message(paste0("Using '", reference_group, "' as reference group for all comparisons"))
   }
+  # If both are NULL, compareDEGs will generate all pairwise comparisons
 
   # Filter for specific cell type if reference_cell_type is provided
   cell_type_subset <- NULL
@@ -115,13 +157,13 @@ findDifferentialGenes <- function(object,
     object = object,
     group_var = group_var,
     cell_type_var = cell_type_var,
-    reference_group = reference_group,
+    reference_group = if (is.null(custom_comparisons)) reference_group else NULL,
     min_cells_per_group = min_cells_per_group,
     test_method = test_method,
     logfc_threshold = logfc_threshold,
     p_val_threshold = p_val_threshold,
     p_val_adj_threshold = p_val_adj_threshold,
-    custom_comparisons = custom_comparisons,
+    custom_comparisons = comparisons_to_use,
     cores = if (!is.null(workers)) workers else 1
   )
 
@@ -197,6 +239,9 @@ findDifferentialGenes <- function(object,
   required_summary_columns <- c("n_cells_group1", "n_cells_group2")
   has_all_required_columns <- all(required_summary_columns %in% colnames(all_degs))
 
+  # Check if we have the new test_groups/reference_groups columns for many-vs-many support
+  has_many_vs_many_columns <- all(c("test_groups", "reference_groups") %in% colnames(all_degs))
+
   if (has_all_required_columns) {
     # Continue with original approach if we have all required columns
     if (has_lfc_threshold_info) {
@@ -212,6 +257,10 @@ findDifferentialGenes <- function(object,
           n_significant = sum(significant & passes_lfc_threshold),
           group1 = dplyr::first(group1),
           group2 = dplyr::first(group2),
+          test_groups = if (has_many_vs_many_columns) dplyr::first(test_groups) else dplyr::first(group1),
+          reference_groups = if (has_many_vs_many_columns) dplyr::first(reference_groups) else dplyr::first(group2),
+          n_cells_test = dplyr::first(n_cells_group1),
+          n_cells_reference = dplyr::first(n_cells_group2),
           .groups = "drop"
         )
     } else {
@@ -227,6 +276,10 @@ findDifferentialGenes <- function(object,
           n_significant = sum(significant),
           group1 = dplyr::first(group1),
           group2 = dplyr::first(group2),
+          test_groups = if (has_many_vs_many_columns) dplyr::first(test_groups) else dplyr::first(group1),
+          reference_groups = if (has_many_vs_many_columns) dplyr::first(reference_groups) else dplyr::first(group2),
+          n_cells_test = dplyr::first(n_cells_group1),
+          n_cells_reference = dplyr::first(n_cells_group2),
           .groups = "drop"
         )
     }
@@ -243,6 +296,8 @@ findDifferentialGenes <- function(object,
           n_significant = sum(significant & passes_lfc_threshold),
           group1 = dplyr::first(group1),
           group2 = dplyr::first(group2),
+          test_groups = if (has_many_vs_many_columns) dplyr::first(test_groups) else dplyr::first(group1),
+          reference_groups = if (has_many_vs_many_columns) dplyr::first(reference_groups) else dplyr::first(group2),
           .groups = "drop"
         )
     } else {
@@ -256,6 +311,8 @@ findDifferentialGenes <- function(object,
           n_significant = sum(significant),
           group1 = dplyr::first(group1),
           group2 = dplyr::first(group2),
+          test_groups = if (has_many_vs_many_columns) dplyr::first(test_groups) else dplyr::first(group1),
+          reference_groups = if (has_many_vs_many_columns) dplyr::first(reference_groups) else dplyr::first(group2),
           .groups = "drop"
         )
     }

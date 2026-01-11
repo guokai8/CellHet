@@ -9,10 +9,39 @@
 #' @param logfc_threshold Log fold-change threshold for DEGs identification
 #' @param p_val_threshold P-value threshold for significance (unadjusted, default: NULL)
 #' @param p_val_adj_threshold Adjusted p-value threshold for significance (default: 0.05)
-#' @param custom_comparisons Optional list of custom comparisons to perform
+#' @param custom_comparisons Optional list of custom comparisons to perform. Overrides reference_group if provided.
+#'   Supports three formats: (1) 2-element vector: \code{c("GroupA", "GroupB")} for one-vs-one,
+#'   (2) Named list: \code{list(test = c("Grp1", "Grp2"), reference = c("Grp3", "Grp4"))} for many-vs-many,
+#'   (3) Vector with "vs": \code{c("Grp1", "Grp2", "vs", "Grp3", "Grp4")}. For multi-group comparisons,
+#'   cells from the specified groups are pooled together for differential expression analysis.
 #' @param cores Number of cores to use for parallel processing
 #'
 #' @return A list containing DEG results for each cell type and comparison
+#'
+#' @examples
+#' \dontrun{
+#' # Example 1: All pairwise comparisons (default)
+#' results <- compareDEGs(seurat_obj, group_var = "condition", cell_type_var = "cell_type")
+#'
+#' # Example 2: Compare all groups against a reference
+#' results <- compareDEGs(seurat_obj, reference_group = "Control")
+#'
+#' # Example 3: Custom one-vs-one comparisons
+#' results <- compareDEGs(seurat_obj,
+#'   custom_comparisons = list(c("Treatment1", "Control"), c("Treatment2", "Control")))
+#'
+#' # Example 4: Many-vs-many comparisons (pooling groups)
+#' results <- compareDEGs(seurat_obj,
+#'   custom_comparisons = list(
+#'     list(test = c("Treatment1", "Treatment2"), reference = c("Control", "Baseline")),
+#'     list(test = "Treatment3", reference = "Control")
+#'   ))
+#'
+#' # Example 5: Using "vs" separator format
+#' results <- compareDEGs(seurat_obj,
+#'   custom_comparisons = list(c("TreatA", "TreatB", "vs", "Control", "Vehicle")))
+#' }
+#'
 #' @export
 compareDEGs <- function(object,
                         group_var = "condition",
@@ -54,6 +83,41 @@ compareDEGs <- function(object,
   unique_cell_types <- unique(metadata[[cell_type_var]])
   unique_groups <- unique(metadata[[group_var]])
 
+  # Helper function to normalize comparison format
+  normalize_comparison <- function(comp) {
+    # Case 1: Named list with test/reference
+    if (is.list(comp) && !is.null(names(comp)) && all(c("test", "reference") %in% names(comp))) {
+      return(list(test = comp$test, reference = comp$reference))
+    }
+
+    # Case 2: Vector with "vs" separator
+    if (is.character(comp) && "vs" %in% comp) {
+      vs_idx <- which(comp == "vs")
+      if (length(vs_idx) != 1) {
+        stop("Comparison format error: only one 'vs' separator allowed")
+      }
+      if (vs_idx == 1 || vs_idx == length(comp)) {
+        stop("Comparison format error: 'vs' separator cannot be at the beginning or end")
+      }
+      return(list(test = comp[1:(vs_idx-1)], reference = comp[(vs_idx+1):length(comp)]))
+    }
+
+    # Case 3: Legacy 2-element vector
+    if (is.character(comp) && length(comp) == 2) {
+      return(list(test = comp[1], reference = comp[2]))
+    }
+
+    # Case 4: Invalid format
+    stop("Invalid comparison format. Must be: (1) 2-element vector c('A','B'), (2) named list list(test=c('A','B'), reference=c('C','D')), or (3) vector with 'vs' separator c('A','B','vs','C','D')")
+  }
+
+  # Helper function to create comparison name
+  create_comparison_name <- function(test_groups, reference_groups) {
+    test_str <- paste(test_groups, collapse = "+")
+    ref_str <- paste(reference_groups, collapse = "+")
+    return(paste(test_str, "vs", ref_str, sep = "_"))
+  }
+
   # Define comparisons
   if (is.null(custom_comparisons)) {
     if (!is.null(reference_group)) {
@@ -62,18 +126,26 @@ compareDEGs <- function(object,
         stop(paste0("Reference group '", reference_group, "' not found in data"))
       }
       other_groups <- setdiff(unique_groups, reference_group)
-      all_comparisons <- lapply(other_groups, function(g) c(g, reference_group))
+      all_comparisons <- lapply(other_groups, function(g) list(test = g, reference = reference_group))
     } else {
       # Generate all pairwise comparisons
-      all_comparisons <- combn(unique_groups, 2, simplify = FALSE)
+      pairs <- combn(unique_groups, 2, simplify = FALSE)
+      all_comparisons <- lapply(pairs, function(p) list(test = p[1], reference = p[2]))
     }
   } else {
-    # Use user-defined comparisons
-    all_comparisons <- custom_comparisons
-    # Validate custom comparisons
+    # Normalize and validate user-defined comparisons
+    all_comparisons <- lapply(custom_comparisons, normalize_comparison)
+
+    # Validate all groups exist
     for (comp in all_comparisons) {
-      if (!all(comp %in% unique_groups)) {
-        stop("Custom comparison contains groups not present in the data")
+      invalid_test <- comp$test[!comp$test %in% unique_groups]
+      invalid_ref <- comp$reference[!comp$reference %in% unique_groups]
+
+      if (length(invalid_test) > 0) {
+        stop(paste0("Test groups not found in data: ", paste(invalid_test, collapse = ", ")))
+      }
+      if (length(invalid_ref) > 0) {
+        stop(paste0("Reference groups not found in data: ", paste(invalid_ref, collapse = ", ")))
       }
     }
   }
@@ -94,22 +166,25 @@ compareDEGs <- function(object,
     # Process each comparison
     for (comp_idx in seq_along(all_comparisons)) {
       comparison <- all_comparisons[[comp_idx]]
-      group1 <- comparison[1]
-      group2 <- comparison[2]
+      test_groups <- comparison$test
+      reference_groups <- comparison$reference
 
-      # Check if enough cells for comparison
+      # Create comparison name
+      comparison_name <- create_comparison_name(test_groups, reference_groups)
+
+      # Check if enough cells for comparison (sum across all groups in each side)
       if (is_seurat) {
-        n_cells_group1 <- sum(cell_subset@meta.data[[group_var]] == group1)
-        n_cells_group2 <- sum(cell_subset@meta.data[[group_var]] == group2)
+        n_cells_test <- sum(cell_subset@meta.data[[group_var]] %in% test_groups)
+        n_cells_reference <- sum(cell_subset@meta.data[[group_var]] %in% reference_groups)
       } else {
-        n_cells_group1 <- sum(colData(cell_subset)[[group_var]] == group1)
-        n_cells_group2 <- sum(colData(cell_subset)[[group_var]] == group2)
+        n_cells_test <- sum(colData(cell_subset)[[group_var]] %in% test_groups)
+        n_cells_reference <- sum(colData(cell_subset)[[group_var]] %in% reference_groups)
       }
 
       # Skip if not enough cells
-      if (n_cells_group1 < min_cells_per_group || n_cells_group2 < min_cells_per_group) {
-        message(paste0("Skipping ", cell_type, ": ", group1, " vs ", group2,
-                       " (insufficient cells: ", n_cells_group1, ", ", n_cells_group2, ")"))
+      if (n_cells_test < min_cells_per_group || n_cells_reference < min_cells_per_group) {
+        message(paste0("Skipping ", cell_type, ": ", comparison_name,
+                       " (insufficient cells: test=", n_cells_test, ", ref=", n_cells_reference, ")"))
         next
       }
 
@@ -118,10 +193,10 @@ compareDEGs <- function(object,
         # Set identities using Seurat namespace
         Seurat::Idents(cell_subset) <- cell_subset@meta.data[[group_var]]
 
-        # Get all genes with no logFC threshold for filtering
+        # FindMarkers accepts vectors for both ident.1 and ident.2
         deg <- Seurat::FindMarkers(cell_subset,
-                                   ident.1 = group1,
-                                   ident.2 = group2,
+                                   ident.1 = test_groups,      # Can be vector of identities
+                                   ident.2 = reference_groups,  # Can be vector of identities
                                    test.use = test_method,
                                    logfc.threshold = 0,  # No threshold to keep all genes
                                    min.pct = 0)  # Include all genes
@@ -132,20 +207,29 @@ compareDEGs <- function(object,
           stop("Package 'scran' needed for SingleCellExperiment objects. Please install it.")
         }
 
-        # Create factor for comparison
-        group_factor <- factor(colData(cell_subset)[[group_var]])
-        group_factor <- droplevels(group_factor)
+        # Create pooled group labels for many-vs-many comparisons
+        cell_groups <- colData(cell_subset)[[group_var]]
+        pooled_groups <- ifelse(
+          cell_groups %in% test_groups,
+          "TEST_POOL",
+          ifelse(cell_groups %in% reference_groups, "REF_POOL", "OTHER")
+        )
 
-        # [REVISED] Run findMarkers with no lfc threshold
-        design <- model.matrix(~group_factor)
-        deg <- scran::findMarkers(cell_subset,
-                                  groups = group_factor,
+        # Filter to only test and reference cells
+        keep_cells <- pooled_groups %in% c("TEST_POOL", "REF_POOL")
+        cell_subset_filtered <- cell_subset[, keep_cells]
+        pooled_groups <- factor(pooled_groups[keep_cells])
+
+        # Run findMarkers
+        design <- model.matrix(~pooled_groups)
+        deg <- scran::findMarkers(cell_subset_filtered,
+                                  groups = pooled_groups,
                                   design = design,
                                   direction = "any",
-                                  lfc = 0)  # [REVISED] No threshold
+                                  lfc = 0)
 
         # Format results to match Seurat output
-        deg <- as.data.frame(deg[[group1]])
+        deg <- as.data.frame(deg[["TEST_POOL"]])
         deg$p_val_adj <- deg$FDR
         deg$avg_log2FC <- deg$logFC
       }
@@ -168,8 +252,18 @@ compareDEGs <- function(object,
       # Classify as up/down regulated
       deg$direction <- ifelse(deg$avg_log2FC > 0, "up", "down")
 
+      # Add group information to each DEG result for downstream compatibility
+      # For backward compatibility, use first group name for group1/group2
+      deg$group1 <- test_groups[1]
+      deg$group2 <- reference_groups[1]
+      deg$n_cells_group1 <- n_cells_test
+      deg$n_cells_group2 <- n_cells_reference
+
+      # Add new columns for many-vs-many support
+      deg$test_groups <- paste(test_groups, collapse = "+")
+      deg$reference_groups <- paste(reference_groups, collapse = "+")
+
       # Store results
-      comparison_name <- paste(group1, "vs", group2, sep = "_")
       result_key <- paste(cell_type, comparison_name, sep = "__")
       deg_results[[result_key]] <- deg
 
@@ -181,14 +275,15 @@ compareDEGs <- function(object,
       summary_row <- data.frame(
         cell_type = cell_type,
         comparison = comparison_name,
-        group1 = group1,
-        group2 = group2,
-        n_cells_group1 = n_cells_group1,
-        n_cells_group2 = n_cells_group2,
+        test_groups = paste(test_groups, collapse = "+"),
+        reference_groups = paste(reference_groups, collapse = "+"),
+        n_cells_test = n_cells_test,
+        n_cells_reference = n_cells_reference,
         n_genes_tested = nrow(deg),
         n_significant = sum(deg$significant & deg$passes_lfc_threshold),
         n_up = n_up,
-        n_down = n_down
+        n_down = n_down,
+        stringsAsFactors = FALSE
       )
 
       summary_stats <- rbind(summary_stats, summary_row)
