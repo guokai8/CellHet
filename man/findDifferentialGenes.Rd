@@ -22,7 +22,8 @@ findDifferentialGenes(
   use_gsea = FALSE,
   return_summary = TRUE,
   reference_group = NULL,
-  reference_cell_type = NULL
+  reference_cell_type = NULL,
+  custom_comparisons = NULL
 )
 }
 \arguments{
@@ -59,10 +60,44 @@ findDifferentialGenes(
 \item{reference_group}{Optional, specify a reference group to compare all other groups against}
 
 \item{reference_cell_type}{Optional, specify a reference cell type to focus analysis on}
+
+\item{custom_comparisons}{Optional list of custom comparisons. If specified, overrides reference_group.
+Each comparison can be: (1) A 2-element vector c("Group1", "Group2"),
+(2) A named list list(test = c("Grp1", "Grp2"), reference = c("Grp3", "Grp4")),
+or (3) A vector with "vs" separator c("Grp1", "Grp2", "vs", "Grp3", "Grp4").
+For multi-group comparisons, cells from multiple groups are pooled together.}
 }
 \value{
 A list containing DEG results for each cell type and comparison
 }
 \description{
 Wrapper function to find differentially expressed genes
+}
+\examples{
+\dontrun{
+# Example 1: Basic analysis with all pairwise comparisons
+results <- findDifferentialGenes(seurat_obj,
+  group_var = "treatment",
+  cell_type_var = "cell_type")
+
+# Example 2: Using a reference group
+results <- findDifferentialGenes(seurat_obj,
+  reference_group = "Control",
+  logfc_threshold = 0.5,
+  p_val_adj_threshold = 0.01)
+
+# Example 3: Custom many-vs-many comparisons
+results <- findDifferentialGenes(seurat_obj,
+  custom_comparisons = list(
+    list(test = c("Drug_1h", "Drug_3h"), reference = c("Control", "Vehicle")),
+    list(test = "Drug_6h", reference = "Control")
+  ))
+
+# Example 4: With enrichment analysis
+results <- findDifferentialGenes(seurat_obj,
+  reference_group = "Control",
+  enrich = TRUE,
+  annot_data = "GO")
+}
+
 }

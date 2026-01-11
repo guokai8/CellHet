@@ -37,7 +37,11 @@ compareDEGs(
 
 \item{p_val_adj_threshold}{Adjusted p-value threshold for significance (default: 0.05)}
 
-\item{custom_comparisons}{Optional list of custom comparisons to perform}
+\item{custom_comparisons}{Optional list of custom comparisons to perform. Overrides reference_group if provided.
+Supports three formats: (1) 2-element vector: \code{c("GroupA", "GroupB")} for one-vs-one,
+(2) Named list: \code{list(test = c("Grp1", "Grp2"), reference = c("Grp3", "Grp4"))} for many-vs-many,
+(3) Vector with "vs": \code{c("Grp1", "Grp2", "vs", "Grp3", "Grp4")}. For multi-group comparisons,
+cells from the specified groups are pooled together for differential expression analysis.}
 
 \item{cores}{Number of cores to use for parallel processing}
 }
@@ -46,4 +50,29 @@ A list containing DEG results for each cell type and comparison
 }
 \description{
 Compare DEGs Across Cell Types and Conditions
+}
+\examples{
+\dontrun{
+# Example 1: All pairwise comparisons (default)
+results <- compareDEGs(seurat_obj, group_var = "condition", cell_type_var = "cell_type")
+
+# Example 2: Compare all groups against a reference
+results <- compareDEGs(seurat_obj, reference_group = "Control")
+
+# Example 3: Custom one-vs-one comparisons
+results <- compareDEGs(seurat_obj,
+  custom_comparisons = list(c("Treatment1", "Control"), c("Treatment2", "Control")))
+
+# Example 4: Many-vs-many comparisons (pooling groups)
+results <- compareDEGs(seurat_obj,
+  custom_comparisons = list(
+    list(test = c("Treatment1", "Treatment2"), reference = c("Control", "Baseline")),
+    list(test = "Treatment3", reference = "Control")
+  ))
+
+# Example 5: Using "vs" separator format
+results <- compareDEGs(seurat_obj,
+  custom_comparisons = list(c("TreatA", "TreatB", "vs", "Control", "Vehicle")))
+}
+
 }
