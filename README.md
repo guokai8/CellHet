@@ -26,6 +26,79 @@ devtools::install_github("guokai8/CellHet")
 library(CellHet)
 ```
 
+## Quick Start
+
+Here's a complete, runnable example using realistic PBMC data with human gene symbols:
+
+```r
+library(CellHet)
+library(Seurat)
+
+# Step 1: Create example PBMC data with real human gene symbols
+# This creates a Seurat object with realistic markers like CD3D, CD4, CD8A, etc.
+pbmc <- createExampleData(
+  n_cells = 500,
+  n_genes = 200,
+  n_cell_types = 4,
+  n_conditions = 2,
+  seed = 123
+)
+
+# View the data structure
+print(pbmc)
+head(pbmc@meta.data)
+table(pbmc$cell_type, pbmc$condition)
+
+# Step 2: Run differential expression analysis
+deg_results <- findDifferentialGenes(
+  object = pbmc,
+  group_var = "condition",
+  cell_type_var = "cell_type",
+  reference_group = "Control",
+  logfc_threshold = 0.25,
+  p_val_adj_threshold = 0.05,
+  workers = 2
+)
+
+# Step 3: View results
+# Check summary
+print(deg_results$summary)
+
+# View top DEGs for a specific cell type and comparison
+head(deg_results$all_degs)
+
+# Step 4: Visualize results
+# Heatmap showing DEG counts
+heatmap_plot <- visualizeDEGHeatmap(
+  deg_results = deg_results,
+  show_counts = TRUE,
+  cluster_rows = TRUE
+)
+print(heatmap_plot)
+
+# Barplot
+barplot <- visualizeDEGBarplot(
+  deg_results = deg_results,
+  facet_by = "comparison"
+)
+print(barplot)
+
+# UpSet plot showing shared genes
+upset_plot <- visualizeDEGUpset(
+  deg_results = deg_results,
+  by_cell_type = TRUE,
+  direction = "both"
+)
+print(upset_plot)
+
+# Step 5: Export results
+exportDEGResults(
+  deg_results = deg_results,
+  file_path = "pbmc_deg_results.xlsx",
+  split_by = "cell_type"
+)
+```
+
 ## Workflow Overview
 
 ![CellHet Workflow](workflow_diagram.png)
