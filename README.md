@@ -452,6 +452,282 @@ multi_modal_data <- simulateMultiModalData(
   cell_overlap = 0.7,
   feature_overlap = 0.3
 )
+
+# Create a quick example dataset with realistic PBMC markers
+pbmc_example <- createExampleData(
+  n_cells = 500,
+  n_genes = 200,
+  n_cell_types = 3,
+  n_conditions = 3,
+  seed = 123
+)
+
+# View metadata
+head(pbmc_example@meta.data)
+```
+
+## Additional Analysis Functions
+
+### Pseudotime Analysis
+
+Calculate and visualize pseudotime trajectories using Monocle3:
+
+```r
+# Calculate pseudotime
+seurat_obj <- calculatePseudotime(
+  seurat_obj,
+  root_type = "Stem_Cells",
+  cell_type_var = "cell_type",
+  reduction = "umap"
+)
+
+# Plot pseudotime trajectory
+plotPseudotime(seurat_obj, color_by = "pseudotime")
+plotPseudotime(seurat_obj, color_by = "cell_type")
+
+# Get pseudotime statistics
+getPseudotimeStats(seurat_obj)
+getPseudotimeStats(seurat_obj, group_by = "cell_type")
+```
+
+### DEG Analysis Utilities
+
+#### Summarize DEG Results
+
+```r
+# Create summary visualizations
+summary_barplot <- summarizeDEGs(
+  deg_results = deg_results,
+  plot_type = "barplot",
+  direction = "both",
+  interactive = FALSE
+)
+
+summary_heatmap <- summarizeDEGs(
+  deg_results = deg_results,
+  plot_type = "heatmap",
+  direction = "up"
+)
+
+summary_dotplot <- summarizeDEGs(
+  deg_results = deg_results,
+  plot_type = "dotplot",
+  direction = "down"
+)
+```
+
+#### Find Shared DEGs
+
+```r
+# Analyze shared and unique DEGs across comparisons
+shared_degs <- findSharedDEGs(
+  deg_results = deg_results,
+  cell_types = c("CD4+ T", "CD8+ T"),
+  min_deg_count = 10,
+  plot_type = "upset",
+  direction = "both"
+)
+
+# Access shared gene sets
+shared_degs$gene_sets
+shared_degs$overlaps
+shared_degs$plot
+
+# Create different visualizations
+venn_results <- findSharedDEGs(deg_results, plot_type = "venn")
+heatmap_results <- findSharedDEGs(deg_results, plot_type = "heatmap")
+network_results <- findSharedDEGs(deg_results, plot_type = "network")
+```
+
+#### Convert External DEG Results
+
+```r
+# Convert Seurat FindMarkers results to CellHet format
+# Assuming you have DEG results from Seurat
+deg_list <- list(
+  "CD4_T_KO_vs_WT" = seurat_deg_results_cd4,
+  "CD8_T_KO_vs_WT" = seurat_deg_results_cd8
+)
+
+cellhet_deg <- convertToCellHetDEG(
+  deg_list = deg_list,
+  p_val_adj_threshold = 0.05,
+  logfc_threshold = 0.25
+)
+
+# Now use with CellHet visualization functions
+visualizeDEGHeatmap(cellhet_deg)
+```
+
+### Multi-Modal Integration Functions
+
+#### Find Conserved Features
+
+```r
+# Find features conserved across modalities
+conserved_features <- findConservedFeatures(
+  integration_results = integration_results,
+  modality_names = c("RNA", "ATAC"),
+  n_features = 100,
+  correlation_threshold = 0.5
+)
+```
+
+#### Find Multi-Modal Signatures
+
+```r
+# Identify cell type signatures across modalities
+signatures <- findMultiModalSignatures(
+  integration_results = integration_results,
+  cell_type_var = "cell_type",
+  modalities = c("RNA", "Protein"),
+  n_features_per_modality = 50
+)
+```
+
+#### Calculate Modality Agreement
+
+```r
+# Assess agreement between modalities
+agreement <- calculateModalityAgreement(
+  integration_results = integration_results,
+  cell_type_var = "cell_type",
+  metric = "correlation"
+)
+```
+
+#### Evaluate Integration Quality
+
+```r
+# Evaluate integration performance
+eval_results <- evaluateIntegration(
+  integration_results = integration_results,
+  cell_type_var = "cell_type",
+  metrics = c("silhouette", "mixing", "kbet", "lisi")
+)
+
+# View evaluation metrics
+print(eval_results$metrics)
+plot(eval_results$plots$silhouette)
+```
+
+#### Feature Importance Analysis
+
+```r
+# Analyze feature importance in integration
+feature_importance <- analyzeFeatureImportance(
+  integration_results = integration_results,
+  method = "random_forest",
+  n_top_features = 50
+)
+
+# Plot top features
+plot(feature_importance$plot)
+```
+
+#### Save and Load Integration Models
+
+```r
+# Export integration model for reuse
+exportImportIntegrationModel(
+  integration_results = integration_results,
+  file_path = "integration_model.rds",
+  mode = "export"
+)
+
+# Import saved model
+loaded_model <- exportImportIntegrationModel(
+  file_path = "integration_model.rds",
+  mode = "import"
+)
+
+# Apply model to new data
+projected_data <- applyIntegrationModel(
+  new_data = new_seurat_obj,
+  integration_model = loaded_model
+)
+
+# Project new data using existing integration
+projected_results <- projectNewData(
+  new_data = new_cells,
+  integration_results = integration_results,
+  reference_data = reference_data
+)
+```
+
+### Enrichment Analysis Utilities
+
+#### richR Integration
+
+```r
+# Run enrichment using richR package
+richr_results <- runRichREnrichment(
+  gene_list = deg_genes,
+  organism = "human",
+  database = "GO",
+  ontology = "BP",
+  pvalue_cutoff = 0.05
+)
+```
+
+#### Export Enrichment Results
+
+```r
+# Export pathway results to Excel
+exportEnrichmentResults(
+  pathway_results = pathway_results,
+  file_path = "pathway_results.xlsx",
+  split_by = "cell_type"
+)
+```
+
+#### Save Pathway Dotplots
+
+```r
+# Save pathway dotplot as high-resolution image
+savePathwayDotplot(
+  pathway_plot = pathway_plot,
+  file_path = "pathway_dotplot.pdf",
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+```
+
+### Color Palettes
+
+CellHet provides a consistent color palette for all visualizations:
+
+```r
+# Get CellHet colors
+colors <- cellhet_colors()         # All colors
+colors_10 <- cellhet_colors(10)    # First 10 colors
+colors_alpha <- cellhet_colors(5, alpha = 0.7)  # With transparency
+
+# Use in ggplot2
+library(ggplot2)
+ggplot(data, aes(x = x, y = y, color = group)) +
+  geom_point() +
+  scale_color_cellhet()
+
+ggplot(data, aes(x = x, y = y, fill = group)) +
+  geom_bar(stat = "identity") +
+  scale_fill_cellhet()
+```
+
+### Interactive Shiny Application
+
+Launch the interactive CellHet Shiny app for exploratory analysis:
+
+```r
+# Launch the app
+runCellHetApp()
+
+# Launch on specific port
+runCellHetApp(port = 3838)
+
+# Launch without browser auto-open
+runCellHetApp(launch.browser = FALSE)
 ```
 
 ## Citation
