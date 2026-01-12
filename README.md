@@ -114,12 +114,12 @@ CellHet offers multiple approaches for DEG analysis with varying levels of compl
 ```r
 # Compare DEGs across all cell types and conditions
 deg_results <- compareDEGs(
-  sce = seurat_object,              # Seurat or SingleCellExperiment object
+  object = pbmc,                    # Seurat or SingleCellExperiment object
   group_var = "condition",          # Group/condition column
   cell_type_var = "cell_type",      # Cell type column
-  min_cells = 3,                    # Minimum cells per group
-  test.use = "wilcox",              # Statistical test: wilcox, t, negbinom, etc.
-  logfc.threshold = 0.25,           # Log fold-change threshold
+  min_cells_per_group = 3,          # Minimum cells per group
+  test_method = "wilcox",           # Statistical test: wilcox, t, negbinom, etc.
+  logfc_threshold = 0.25,           # Log fold-change threshold
   p_val_adj_threshold = 0.05,       # Adjusted p-value threshold
   custom_comparisons = NULL,        # Optional list of custom comparisons
   cores = 4                         # Number of cores for parallel processing
@@ -129,22 +129,22 @@ deg_results <- compareDEGs(
 #### 2. Comprehensive Analysis
 
 ```r
-# Complete analysis pipeline
+# Complete analysis pipeline with pathway enrichment
 full_results <- findDifferentialGenes(
-  object = seurat_object,
+  object = pbmc,
   group_var = "condition",
   cell_type_var = "cell_type",
-  min_cells = 3,
-  logfc.threshold = 0.25,
+  min_cells_per_group = 3,
+  logfc_threshold = 0.25,
   p_val_adj_threshold = 0.05,
-  test.use = "wilcox",
-  workers = 4,                       # Parallel processing
-  gene_id_mapping = id_map_df,       # Optional gene ID mapping
-  enrich = TRUE,                     # Run pathway analysis
-  annot_data = annot_data,           # Annotation database
+  test_method = "wilcox",
+  workers = 2,                       # Parallel processing
+  gene_id_mapping = NULL,            # Optional gene ID mapping
+  enrich = FALSE,                    # Set TRUE to run pathway analysis
+  annot_data = NULL,                 # Annotation database (e.g., from richR)
   use_gsea = FALSE,                  # ORA by default, set TRUE for GSEA
   return_summary = TRUE,             # Return summary visualization
-  reference_group = "control"        # Use control as reference
+  reference_group = "Control"        # Use Control as reference
 )
 ```
 
@@ -153,14 +153,19 @@ full_results <- findDifferentialGenes(
 ```r
 # Quick comparison of specific groups and cell types
 t_cell_results <- quickCompare(
-  object = seurat_object,
-  cell_types = c("CD4+ T", "CD8+ T"),  # Specific cell types
-  group1 = "treatment",                # First group
-  group2 = "control",                  # Second group
-  logfc.threshold = 0.25,
+  object = pbmc,
+  cell_types = c("CD4_T", "CD8_T"),    # Specific cell types
+  group1 = "Stimulated",               # First group
+  group2 = "Control",                  # Second group
+  logfc_threshold = 0.25,
   p_val_adj_threshold = 0.05,
+  test_method = "wilcox",
   return_plot = TRUE                   # Returns volcano plots
 )
+
+# Access results
+print(t_cell_results$results)
+print(t_cell_results$plots$CD4_T)    # View CD4 T cell volcano plot
 ```
 
 ### Visualization
@@ -249,26 +254,35 @@ pattern_viz <- visualizeDEGPatterns(
 Perform pathway enrichment analysis on DEG results:
 
 ```r
-# Run pathway analysis
-pathway_results <- runPathwayAnalysis(
-  deg_results = deg_results,
-  annot_data = go_annot,             # Annotation data from richR package
-  annot_type = "GO",                 # "GO", "KEGG", "KEGGM", or "MSIGDB"
-  ontology = "BP",                   # For GO: "BP", "MF", or "CC"
-  direction = "both",                # Consider up/down/both DEGs
-  min_genes = 5,                     # Min genes per pathway
-  use_gsea = FALSE                   # Use ORA (FALSE) or GSEA (TRUE)
-)
+# Note: Requires richR package and annotation database
+# Example with GO enrichment
+\dontrun{
+  # First get annotation data
+  library(richR)
+  # For human genes
+  go_annot <- getGO(organism = "human")
 
-# Visualize pathway results
-pathway_plot <- visualizePathwaysDotplot(
-  pathway_results = pathway_results,
-  top_n = 10,                        # Top pathways to show
-  color_by = "RichFactor",           # Color by: "RichFactor", "Padj", etc.
-  size_by = "Pvalue",                # Size by: "Pvalue", "Padj", etc.
-  flip = TRUE,                       # Flip coordinates
-  title = "Pathway Enrichment"
-)
+  # Run pathway analysis on DEG results
+  pathway_results <- runPathwayAnalysis(
+    deg_results = deg_results,
+    annot_data = go_annot,           # Annotation data from richR package
+    annot_type = "GO",               # "GO", "KEGG", "KEGGM", or "MSIGDB"
+    ontology = "BP",                 # For GO: "BP", "MF", or "CC"
+    direction = "both",              # Consider up/down/both DEGs
+    min_genes = 5,                   # Min genes per pathway
+    use_gsea = FALSE                 # Use ORA (FALSE) or GSEA (TRUE)
+  )
+
+  # Visualize pathway results
+  pathway_plot <- visualizePathwaysDotplot(
+    pathway_results = pathway_results,
+    top_n = 10,                      # Top pathways to show
+    color_by = "RichFactor",         # Color by: "RichFactor", "Padj", etc.
+    size_by = "Pvalue",              # Size by: "Pvalue", "Padj", etc.
+    flip = TRUE,                     # Flip coordinates
+    title = "Pathway Enrichment"
+  )
+}
 ```
 
 ### Multi-Modal Integration
@@ -276,10 +290,20 @@ pathway_plot <- visualizePathwaysDotplot(
 Integrate and analyze data across multiple modalities:
 
 ```r
+# First, create multi-modal data
+multi_modal_data <- simulateMultiModalData(
+  n_cells = 800,
+  n_modalities = 2,
+  n_features = c(2000, 1000),
+  n_cell_types = 4,
+  n_conditions = 2,
+  return_type = "seurat"
+)
+
 # Integrate data across modalities
 integration_results <- integrateMultiModalData(
-  data_list = list(rna_data, atac_data, protein_data),
-  modality_names = c("RNA", "ATAC", "Protein"),
+  data_list = multi_modal_data,
+  modality_names = c("RNA", "ATAC"),
   cell_type_var = "cell_type",
   integration_method = "harmony",    # "harmony", "canonical_correlation", "mnn", "seurat"
   dim_reduction = "umap",            # Dimension reduction method
@@ -291,22 +315,22 @@ integration_results <- integrateMultiModalData(
 integration_viz <- visualizeIntegration(
   integration_results = integration_results,
   color_by = c("modality", "cell_type"),
-  features = top_variable_features,  # Features to visualize
-  plot_types = c("dimplot", "feature", "cluster", "metrics", "density"),
-  split_by = "condition",
+  plot_types = c("dimplot", "density"),
   interactive = FALSE
 )
 
-# Optimize integration parameters
-optimized_integration <- optimizeIntegrationParameters(
-  data_list = list(rna_data, atac_data),
-  modality_names = c("RNA", "ATAC"),
-  cell_type_var = "cell_type",
-  optimization_metric = "mixing",    # "mixing", "silhouette", "kbet", "lisi"
-  methods = c("harmony", "mnn"),     # Methods to test
-  n_dims_range = c(10, 20, 30),      # Dimensions to test
-  n_features_range = c(1000, 2000, 3000)
-)
+# Optimize integration parameters (test different settings)
+\dontrun{
+  optimized_integration <- optimizeIntegrationParameters(
+    data_list = multi_modal_data,
+    modality_names = c("RNA", "ATAC"),
+    cell_type_var = "cell_type",
+    optimization_metric = "mixing",    # "mixing", "silhouette", "kbet", "lisi"
+    methods = c("harmony", "mnn"),     # Methods to test
+    n_dims_range = c(10, 20, 30),      # Dimensions to test
+    n_features_range = c(1000, 2000, 3000)
+  )
+}
 ```
 
 ### Advanced Analyses
@@ -314,37 +338,42 @@ optimized_integration <- optimizeIntegrationParameters(
 #### Trajectory Analysis
 
 ```r
+# Note: Pseudotime must be calculated first (requires monocle3)
+# See the Pseudotime Analysis section for calculatePseudotime()
+
 # Analyze gene expression along a trajectory
-trajectory_results <- analyzeDEGTrajectory(
-  sce = seurat_object,
-  trajectory_var = "pseudotime",     # Column with trajectory values
-  cell_type_var = "cell_type",
-  group_var = "condition",           # Optional grouping
-  n_bins = 10,                       # Number of trajectory bins
-  smooth_method = "loess",           # "loess", "gam", or "none"
-  n_top_genes = 50,                  # Top dynamic genes
-  cluster_genes = TRUE               # Cluster genes by pattern
-)
+\dontrun{
+  trajectory_results <- analyzeDEGTrajectory(
+    sce = pbmc,
+    trajectory_var = "pseudotime",     # Column with trajectory values
+    cell_type_var = "cell_type",
+    group_var = "condition",           # Optional grouping
+    n_bins = 10,                       # Number of trajectory bins
+    smooth_method = "loess",           # "loess", "gam", or "none"
+    n_top_genes = 50,                  # Top dynamic genes
+    cluster_genes = TRUE               # Cluster genes by pattern
+  )
 
-# Plot trajectories for specific genes
-gene_trajectory <- plotGeneTrajectory(
-  trajectory_results = trajectory_results,
-  genes = c("CD3D", "MS4A1", "NKG7"),
-  plot_type = "line",                # "line", "box", or "violin"
-  add_loess_fit = TRUE,
-  facet_by_cluster = TRUE
-)
+  # Plot trajectories for specific genes
+  gene_trajectory <- plotGeneTrajectory(
+    trajectory_results = trajectory_results,
+    genes = c("CD3D", "MS4A1", "NKG7"),
+    plot_type = "line",                # "line", "box", or "violin"
+    add_loess_fit = TRUE,
+    facet_by_cluster = TRUE
+  )
 
-# Compare trajectories between conditions
-diff_trajectory <- diffTrajectoryAnalysis(
-  sce = seurat_object,
-  trajectory_var = "pseudotime",
-  group_var = "condition",
-  cell_type_var = "cell_type",
-  n_bins = 10,
-  test_method = "anova",             # Statistical method
-  smooth_method = "loess"
-)
+  # Compare trajectories between conditions
+  diff_trajectory <- diffTrajectoryAnalysis(
+    sce = pbmc,
+    trajectory_var = "pseudotime",
+    group_var = "condition",
+    cell_type_var = "cell_type",
+    n_bins = 10,
+    test_method = "anova",             # Statistical method
+    smooth_method = "loess"
+  )
+}
 ```
 
 #### Cell Type Response Comparison
@@ -353,7 +382,7 @@ diff_trajectory <- diffTrajectoryAnalysis(
 # Compare cell type responses to a reference
 response_comparison <- compareResponses(
   deg_results = deg_results,
-  reference_cell_type = "CD4+ T",    # Reference cell type
+  reference_cell_type = "CD4_T",     # Reference cell type
   plot_type = "heatmap",             # "heatmap", "barplot", "radar"
   similarity_metric = "jaccard"      # Similarity metric
 )
@@ -361,7 +390,7 @@ response_comparison <- compareResponses(
 # Visualize responses across conditions
 response_viz <- visualizeReferenceComparisons(
   deg_results = deg_results,
-  reference_group = "control",       # Reference condition
+  reference_group = "Control",       # Reference condition
   plot_type = "all",                 # "heatmap", "similarity", "trajectory", "all"
   interactive = FALSE
 )
@@ -394,35 +423,126 @@ exportDEGResults(
 )
 ```
 
-## Example Workflow with Simulated Data
+## Complete Workflow Examples
 
-CellHet includes functions to generate simulated data, allowing users to test the functionality without their own datasets. The following example demonstrates a complete workflow using simulated data:
+### Example 1: Comprehensive DEG Analysis with Real Gene Symbols
+
+Building on the Quick Start example, here's a more comprehensive analysis:
 
 ```r
-# Load required libraries
 library(CellHet)
 library(Seurat)
 library(dplyr)
 
-# Generate simulated single-cell data
-set.seed(42) # For reproducibility
+# Create example PBMC data with realistic human gene symbols
+pbmc <- createExampleData(
+  n_cells = 500,
+  n_genes = 200,
+  n_cell_types = 4,
+  n_conditions = 2,
+  seed = 123
+)
+
+# View gene names (real human gene symbols like CD3D, CD4, CD8A, etc.)
+head(rownames(pbmc))
+
+# Check the data
+print(table(pbmc$cell_type, pbmc$condition))
+
+# Run comprehensive differential expression analysis
+deg_results <- findDifferentialGenes(
+  object = pbmc,
+  group_var = "condition",
+  cell_type_var = "cell_type",
+  reference_group = "Control",
+  logfc_threshold = 0.25,
+  p_val_adj_threshold = 0.05,
+  workers = 2,
+  return_summary = TRUE
+)
+
+# View summary
+print(deg_results$summary)
+
+# View specific DEGs
+cd4_degs <- deg_results$all_degs %>%
+  filter(cell_type == "CD4_T", significant == TRUE) %>%
+  arrange(desc(abs(avg_log2FC)))
+print(head(cd4_degs))
+
+# Create comprehensive visualizations
+heatmap <- visualizeDEGHeatmap(
+  deg_results = deg_results,
+  show_counts = TRUE,
+  cluster_rows = TRUE,
+  title = "DEGs Across PBMC Cell Types"
+)
+
+barplot <- visualizeDEGBarplot(
+  deg_results = deg_results,
+  facet_by = "comparison",
+  show_counts = TRUE
+)
+
+dotplot <- visualizeDEGDotplot(
+  deg_results = deg_results,
+  use_triangles = TRUE,
+  count_display = "inside"
+)
+
+upset_plot <- visualizeDEGUpset(
+  deg_results = deg_results,
+  by_cell_type = TRUE,
+  direction = "both",
+  highlight_exclusive = TRUE
+)
+
+# Analyze shared DEGs
+shared_analysis <- findSharedDEGs(
+  deg_results = deg_results,
+  min_deg_count = 5,
+  plot_type = "upset",
+  direction = "both"
+)
+
+# View shared genes
+print(shared_analysis$gene_sets)
+
+# Create multi-panel visualization
+pattern_viz <- visualizeDEGPatterns(
+  deg_results = deg_results,
+  plot_types = c("heatmap", "barplot", "dotplot"),
+  ncol = 1
+)
+
+# Export to Excel
+exportDEGResults(
+  deg_results = deg_results,
+  file_path = "pbmc_deg_results.xlsx",
+  split_by = "cell_type"
+)
+```
+
+### Example 2: Large-Scale Simulated Study
+
+For testing with larger datasets or custom parameters:
+
+```r
+# Generate larger simulated dataset
+set.seed(42)
 sim_data <- simulateSingleCellData(
   n_cells = 1000,              # 1000 cells
   n_genes = 2000,              # 2000 genes
   n_cell_types = 5,            # 5 cell types
-  n_conditions = 2,            # 2 conditions (e.g., treatment vs control)
-  pct_de_genes = 0.1,          # 10% of genes are differentially expressed
-  effect_size = 1.5,           # Effect size for DE genes
+  n_conditions = 2,            # 2 conditions
+  pct_de_genes = 0.1,          # 10% DE genes
+  effect_size = 1.5,           # Effect size
   batch_effect = TRUE,         # Include batch effects
-  add_trajectory = TRUE,       # Add pseudotime trajectory
-  return_type = "seurat"       # Return a Seurat object
+  add_trajectory = TRUE,       # Add pseudotime
+  return_type = "seurat"
 )
 
-# Explore the simulated data
-print(table(sim_data$cell_type, sim_data$condition))
-print(head(sim_data@meta.data))
-
-# Run differential expression analysis
+# Run analysis
 deg_results <- findDifferentialGenes(
   object = sim_data,
   group_var = "condition",
@@ -433,36 +553,27 @@ deg_results <- findDifferentialGenes(
 )
 
 # Visualize results
-heatmap <- visualizeDEGHeatmap(deg_results)
-barplot <- visualizeDEGBarplot(deg_results)
-upset <- visualizeDEGUpset(deg_results, by_cell_type = TRUE)
+visualizeDEGPatterns(deg_results, plot_types = c("heatmap", "barplot"))
+```
 
-# Compare responses across cell types
-response_viz <- visualizeReferenceComparisons(
-  deg_results = deg_results,
-  reference_group = "Condition1",
-  plot_type = "all"
-)
+### Example 3: Multi-Modal Integration
 
-# Generate simulated multi-modal data
+```r
+# Generate multi-modal data (RNA + ATAC)
 multi_modal_data <- simulateMultiModalData(
   n_cells = 800,
-  n_modalities = 2,                          # RNA and ATAC
-  n_features = c(2000, 1000),                # 2000 genes, 1000 peaks
-  n_cell_types = 4,                          # 4 cell types
-  n_conditions = 2,                          # 2 conditions
-  shared_cell_types = TRUE,                  # Same cell types across modalities
-  cell_overlap = 0.7,                        # 70% of cells shared between modalities
-  feature_overlap = 0.3,                     # 30% of features have correlated expression
-  correlation_strength = 0.7,                # Correlation strength between modalities
-  return_type = "seurat"                     # Return Seurat objects
+  n_modalities = 2,
+  n_features = c(2000, 1000),
+  n_cell_types = 4,
+  n_conditions = 2,
+  shared_cell_types = TRUE,
+  cell_overlap = 0.7,
+  feature_overlap = 0.3,
+  correlation_strength = 0.7,
+  return_type = "seurat"
 )
 
-# Access individual modalities
-rna_data <- multi_modal_data$Modality1
-atac_data <- multi_modal_data$Modality2
-
-# Integrate the modalities
+# Integrate modalities
 integration_results <- integrateMultiModalData(
   data_list = multi_modal_data,
   modality_names = c("RNA", "ATAC"),
@@ -475,26 +586,53 @@ integration_results <- integrateMultiModalData(
 # Visualize integration
 integration_viz <- visualizeIntegration(
   integration_results = integration_results,
-  color_by = c("modality", "cell_type", "condition"),
+  color_by = c("modality", "cell_type"),
   plot_types = c("dimplot", "density")
 )
 
-# Analyze gene expression trajectories using pseudotime
-trajectory_results <- analyzeDEGTrajectory(
-  sce = sim_data,
-  trajectory_var = "pseudotime",
+# Evaluate integration quality
+eval_results <- evaluateIntegration(
+  integration_results = integration_results,
   cell_type_var = "cell_type",
-  n_bins = 10,
-  smooth_method = "loess"
+  metrics = c("silhouette", "mixing")
 )
+print(eval_results$metrics)
+```
 
-# Export results
-temp_file <- tempfile(fileext = ".xlsx")
-exportDEGResults(
-  deg_results = deg_results,
-  file_path = temp_file,
-  split_by = "cell_type"
-)
+### Example 4: Pseudotime Analysis
+
+```r
+# Using the pbmc data from Quick Start
+pbmc <- createExampleData(n_cells = 500, n_genes = 200, seed = 123)
+
+# Note: For real pseudotime analysis, you would need monocle3 installed
+# This example shows the function usage
+\dontrun{
+  # Calculate pseudotime
+  pbmc <- calculatePseudotime(
+    pbmc,
+    root_type = "CD4_T",
+    cell_type_var = "cell_type",
+    reduction = "umap"
+  )
+
+  # Plot pseudotime
+  plotPseudotime(pbmc, color_by = "pseudotime")
+  plotPseudotime(pbmc, color_by = "cell_type")
+
+  # Get statistics
+  stats <- getPseudotimeStats(pbmc, group_by = "cell_type")
+  print(stats)
+
+  # Analyze trajectory
+  trajectory_results <- analyzeDEGTrajectory(
+    sce = pbmc,
+    trajectory_var = "pseudotime",
+    cell_type_var = "cell_type",
+    n_bins = 10,
+    smooth_method = "loess"
+  )
+}
 ```
 
 ## Working with Simulated Data
